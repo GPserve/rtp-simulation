@@ -1,6 +1,6 @@
 // Web Worker entry: runs the full Monte Carlo simulation off the main
 // thread and streams progress back to the page.
-importScripts("../vendor/sha256.js", "core.js");
+importScripts("../vendor/sha256.js", "../vendor/sha512.js", "engine.js", "core.js");
 
 self.onmessage = function (event) {
   var config = event.data;

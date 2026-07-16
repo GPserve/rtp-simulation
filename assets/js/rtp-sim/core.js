@@ -1,15 +1,11 @@
-// GanPlay RTP simulation engine core.
+// GanPlay RTP simulation core: Monte Carlo loop over the bundled game
+// engine (engine.js — verbatim golden-tested ports of the production
+// result-generation and payout logic). Loadable in page, Web Worker and
+// Node (parity harnesses).
 //
-// Byte-for-byte port of the production result-generation and payout logic
-// (mini_api services/seed_service.py + per-game payout functions). Pure
-// functions: same input always yields the same output. Loadable in three
-// contexts: page script, Web Worker (importScripts), and Node (for the
-// Python-vs-JS parity harness).
-//
-// Production uses Python Decimal (quantize ROUND_HALF_EVEN). This engine
-// approximates it with IEEE754 double + manual half-even rounding — it is a
-// decision-support simulation preview, not a settlement ledger; float noise
-// is far below simulation sampling noise.
+// Production uses Python Decimal (quantize ROUND_HALF_EVEN); the engine
+// approximates it with IEEE754 double + manual half-even rounding — this is
+// a decision-support preview, not a settlement ledger.
 (function (root, factory) {
   var api = factory(root);
   if (typeof module === "object" && module.exports) {
@@ -19,131 +15,57 @@
 })(typeof self !== "undefined" ? self : globalThis, function (root) {
   "use strict";
 
-  var sha256lib = root.sha256 || (typeof require === "function" ? require("../vendor/sha256.js").sha256 : null);
-  if (!sha256lib) throw new Error("js-sha256 must be loaded before core.js");
+  var RtpEngine = root.RtpEngine || (typeof require === "function" ? require("./engine.js") : null);
+  if (!RtpEngine) throw new Error("engine.js must be loaded before core.js");
 
-  var TWO_POW_NEG_53 = Math.pow(2, -53);
+  var req = RtpEngine.require;
+  var round2 = req("decimal-utils.js").round2;
+  var seed = req("seed.js");
+  var limboPaytable = req("paytables/limbo.js");
 
-  var hmacSha256Hex = function (key, message) {
-    return sha256lib.hmac(key, message);
+  // ---------------------------------------------------------------------
+  // LIMBO override. The bundled source module predates the production fix
+  // that wired effective_rtp into result generation (mini_api `76a8067`,
+  // game_limbo.py: house_edge = 100 − effective_rtp passed into
+  // generate_limbo_result) and pins house_edge to 1. This override
+  // simulates current production behaviour, so the RTP input is live.
+  // ---------------------------------------------------------------------
+  var limboHitRateToTarget = function (hitRate, rtp) {
+    // P(crash ≥ m) ≈ rtp/(100·m) ⇒ target m for a given hit rate = rtp/h.
+    var raw = rtp / hitRate;
+    return round2(
+      Math.min(limboPaytable.TARGET_MAX, Math.max(limboPaytable.TARGET_MIN, raw))
+    );
   };
 
-  // Round half-to-even at `decimals` places (approximates Decimal.quantize).
-  var roundHalfEven = function (value, decimals) {
-    var factor = Math.pow(10, decimals);
-    var scaled = value * factor;
-    var floor = Math.floor(scaled);
-    var diff = scaled - floor;
-    var EPS = 1e-7;
-    var rounded;
-    if (Math.abs(diff - 0.5) < EPS) {
-      rounded = floor % 2 === 0 ? floor : floor + 1;
-    } else {
-      rounded = Math.round(scaled);
-    }
-    return rounded / factor;
-  };
-
-  var round2 = function (value) {
-    return roundHalfEven(value, 2);
-  };
-
-  // ---------------------------------------------------------------------
-  // seed_service.py::generate_dice_result — returns a 2-decimal Number.
-  // Intermediate hex→integer conversion uses BigInt (values exceed the JS
-  // 53-bit safe-integer range before the >>3 shift).
-  // ---------------------------------------------------------------------
-  var generateDiceResult = function (serverSeed, clientSeed, nonce) {
-    var hashHex = hmacSha256Hex(serverSeed, clientSeed + ":" + nonce);
-    var index = Number(BigInt("0x" + hashHex.slice(0, 15)) % 47n);
-    var targetHex = hashHex.slice(index, index + 14);
-    var numBig = BigInt("0x" + targetHex) >> 3n;
-    var rawFloat = Number(numBig) * TWO_POW_NEG_53 * 10000;
-    var diceResult = rawFloat / 100;
-    return Number(diceResult.toFixed(2));
-  };
-
-  // ---------------------------------------------------------------------
-  // modules/client/game/dice/game_dice.py::computed_win_amount
-  // ---------------------------------------------------------------------
-  var diceComputedWinAmount = function (opts) {
-    var roll = opts.roll;
-    var point = opts.point;
-    var betAmount = opts.betAmount;
-    var rtp = opts.rtp;
-    var result = opts.result;
-
-    var win = 0;
-    var profit = 0;
-    var rslt = 0;
-    var multiplier = null;
-
-    var isWin =
-      (roll === "over" && result > point) ||
-      (roll === "under" && result < point);
-
-    if (isWin) {
-      var RTP = round2(rtp / 100);
-      var winchange = roll === "over" ? 100 - point : point;
-      winchange = round2(winchange);
-      multiplier = round2((100 / winchange) * RTP);
-      win = round2(betAmount * multiplier);
-      rslt = 1;
-      profit = round2(win - betAmount);
-    } else if (result === point) {
-      rslt = 2;
-      win = betAmount;
-      profit = 0;
-    } else {
-      profit = -betAmount;
-    }
-
-    return { rslt: rslt, win: win, multiplier: multiplier, profit: profit };
-  };
-
-  // ---------------------------------------------------------------------
-  // Game registry. classification A = strategy-independent (player strategy
-  // only affects variance, never the expected RTP).
-  // ---------------------------------------------------------------------
-  var GAME_REGISTRY = {
-    DICE: {
-      classification: "A",
-      defaultParams: { hitRate: 50 },
-      // Average player hit rate (%) maps to roll="under" + point=hitRate.
-      simulateOneUnit: function (serverSeed, clientSeed, nonce, params) {
-        var result = generateDiceResult(serverSeed, clientSeed, nonce);
-        var payout = diceComputedWinAmount({
-          roll: "under",
-          point: round2(params.hitRate),
-          betAmount: params.betAmount,
-          rtp: params.rtp,
-          result: result,
-        });
-        return { invested: params.betAmount, win: payout.win };
-      },
+  var LIMBO_CURRENT_PRODUCTION = {
+    classification: "A",
+    defaultParams: { hitRate: 50 },
+    simulateOneUnit: function (serverSeed, clientSeed, nonce, params) {
+      // house_edge is DECIMAL(4,2)-exact in production (Decimal 100 − rtp,
+      // then float()); toFixed(2) recovers the exact decimal value before
+      // the float pipeline.
+      var houseEdge = Number((100 - params.rtp).toFixed(2));
+      var crashPoint = seed.generateLimboResult(serverSeed, clientSeed, nonce, houseEdge);
+      var payout = limboPaytable.computedWinAmount({
+        targetMultiplier: limboHitRateToTarget(params.hitRate, params.rtp),
+        crashPoint: crashPoint,
+        betAmount: params.betAmount,
+      });
+      return { invested: params.betAmount, win: payout.win };
     },
   };
 
-  // ---------------------------------------------------------------------
-  // RTP input validation (ported from mini_api generic bounds: marshmallow
-  // validate.Range(0.01, 99.99) on merchant game RTP).
-  // ---------------------------------------------------------------------
-  var GENERIC_MIN = 0.01;
-  var GENERIC_MAX = 99.99;
-
-  var validateRtp = function (gameCode, rtp) {
-    if (!isFinite(rtp)) return { valid: false, reason: "invalid_number" };
-    if (rtp < GENERIC_MIN || rtp > GENERIC_MAX) {
-      return { valid: false, reason: "out_of_range" };
-    }
-    return { valid: true, reason: null };
-  };
+  var GAME_REGISTRY = Object.assign({}, RtpEngine.GAME_REGISTRY, {
+    LIMBO: LIMBO_CURRENT_PRODUCTION,
+  });
 
   // ---------------------------------------------------------------------
   // Monte Carlo loop: the same parameter set runs REPEATS full simulations;
   // the main result is the mean and the 90% interval (p5~p95) across
-  // repeats. Invested and win are accumulated per bet (not betAmount×count)
-  // so that gross profit === total turnover − total payout holds exactly.
+  // repeats. Invested and win are accumulated per bet (blackjack side bets
+  // can push per-bet invested above betAmount), so gross profit === total
+  // turnover − total payout holds exactly.
   // ---------------------------------------------------------------------
   var REPEATS = 20;
   var SIMULATION_COUNT = 100000;
@@ -185,7 +107,10 @@
 
   var runOneRepeat = function (game, count, betAmount, rtp, params) {
     var serverSeed = randomHexServerSeed();
-    var merged = Object.assign({}, params, { betAmount: betAmount, rtp: rtp });
+    var merged = Object.assign({}, game.defaultParams, params, {
+      betAmount: betAmount,
+      rtp: rtp,
+    });
     var totalInvested = 0;
     var totalWin = 0;
     for (var i = 0; i < count; i += 1) {
@@ -223,13 +148,7 @@
     var profitSamples = [];
     var flowSamples = [];
     for (var r = 0; r < REPEATS; r += 1) {
-      var one = runOneRepeat(
-        game,
-        config.count,
-        config.betAmount,
-        config.rtp,
-        config.params
-      );
+      var one = runOneRepeat(game, config.count, config.betAmount, config.rtp, config.params);
       rtpSamples.push(one.actualRtp);
       profitSamples.push(one.houseProfit);
       flowSamples.push(one.totalFlow);
@@ -270,17 +189,31 @@
     };
   };
 
+  // BLACKJACK theoretical perfect-strategy result needs no simulation.
+  var blackjackTheoreticalResult = function (rtp, betAmount, count) {
+    var totalFlow = betAmount * count;
+    var totalWin = totalFlow * (rtp / 100);
+    return { actualRtp: rtp, totalFlow: totalFlow, houseProfit: totalFlow - totalWin };
+  };
+
   return {
-    roundHalfEven: roundHalfEven,
+    engine: RtpEngine,
     round2: round2,
-    hmacSha256Hex: hmacSha256Hex,
-    generateDiceResult: generateDiceResult,
-    diceComputedWinAmount: diceComputedWinAmount,
+    validateRtp: RtpEngine.validateRtp,
     GAME_REGISTRY: GAME_REGISTRY,
-    validateRtp: validateRtp,
     REPEATS: REPEATS,
     SIMULATION_COUNT: SIMULATION_COUNT,
     CONVERGENCE_COUNT_TIERS: CONVERGENCE_COUNT_TIERS,
     runFullSimulation: runFullSimulation,
+    blackjackTheoreticalResult: blackjackTheoreticalResult,
+    // parity-harness / page re-exports
+    generateDiceResult: seed.generateDiceResult,
+    diceComputedWinAmount: req("paytables/dice.js").computedWinAmount,
+    generateFlipResult: seed.generateFlipResult,
+    flipMultiplierForStreak: req("paytables/flip.js").multiplierForStreak,
+    analyticFlipDepthBreakdown: req("games/flip.js").analyticDepthBreakdown,
+    generateLimboResult: seed.generateLimboResult,
+    limboComputedWinAmount: limboPaytable.computedWinAmount,
+    limboHitRateToTarget: limboHitRateToTarget,
   };
 });
