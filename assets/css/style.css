@@ -114,3 +114,336 @@ body {
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
+
+/* Simulation pages: wider content column (form grid + stat cards) */
+.site-main--wide {
+  max-width: 960px;
+}
+
+/* Simulation pages: fixed disclaimer line */
+.notice-warning {
+  border: 1px solid #92400e;
+  background-color: rgba(146, 64, 14, 0.15);
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  color: #fbbf24;
+}
+
+.notice-warning p {
+  margin: 0;
+}
+
+/* Simulation pages: parameter / chart card */
+.sim-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+  margin-top: 1.25rem;
+}
+
+.sim-card-title {
+  margin: 0 0 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sim-section-title {
+  margin: 1.5rem 0 1rem;
+  padding-left: 0.75rem;
+  border-left: 4px solid var(--color-accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.input-wrap {
+  position: relative;
+}
+
+.input-wrap .form-input {
+  width: 100%;
+  padding-right: 3rem;
+}
+
+.input-suffix {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.form-input {
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.form-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.form-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
+.form-input.is-invalid {
+  border: 1px solid #f87171;
+}
+
+/* Simulation pages: run button + progress */
+.run-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 1.25rem;
+}
+
+.run-button {
+  background-color: var(--color-accent);
+  color: var(--color-bg);
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.run-button:hover {
+  opacity: 0.9;
+}
+
+.run-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.progress-wrap {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--color-border);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background-color: var(--color-accent);
+  transition: width 0.2s ease;
+}
+
+/* Simulation pages: result heading + stat cards */
+.result-empty {
+  margin: 1.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.result-heading {
+  margin: 1.5rem 0 0.25rem;
+}
+
+.result-heading-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.result-heading-subtitle {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.result-setting-line {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  text-align: right;
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-range {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* Simulation pages: convergence chart */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chart-legend-swatch {
+  display: inline-block;
+  width: 1.4rem;
+  height: 0;
+  border-top: 3px solid;
+}
+
+.chart-legend-swatch--simulated {
+  border-color: var(--color-accent);
+}
+
+.chart-legend-swatch--theoretical {
+  border-color: #f87171;
+  border-top-style: dashed;
+}
+
+.chart-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.chart-svg {
+  width: 100%;
+  min-width: 560px;
+  height: auto;
+  display: block;
+}
+
+.chart-grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.chart-tick {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.chart-tick--y {
+  text-anchor: end;
+}
+
+.chart-tick--x {
+  text-anchor: middle;
+}
+
+.chart-axis-title {
+  fill: var(--color-text-muted);
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+.chart-line--simulated {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.chart-line--theoretical {
+  stroke: #f87171;
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.chart-dot {
+  fill: var(--color-accent);
+}
