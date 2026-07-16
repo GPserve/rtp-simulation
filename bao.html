@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dice RTP Simulation | GanPlay</title>
-  <meta name="description" content="Simulate how Dice actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Bao RTP Simulation | GanPlay</title>
+  <meta name="description" content="Simulate how Bao actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="page">
     <header class="site-header">
-      <h1 class="site-title">Dice RTP Simulation</h1>
+      <h1 class="site-title">Bao RTP Simulation</h1>
       <p class="site-subtitle">GanPlay Merchant Self-Service RTP Simulation</p>
     </header>
 
@@ -31,11 +31,10 @@
             </div>
             <p class="form-error" id="bet-amount-error" hidden>Please enter a valid amount greater than 0.</p>
           </div>
-
           <div class="form-group">
             <label class="form-label" for="rtp-setting">RTP Setting</label>
             <div class="input-wrap">
-              <input class="form-input" id="rtp-setting" type="text" inputmode="decimal" value="99.00" placeholder="Enter RTP, e.g. 96.5" autocomplete="off">
+              <input class="form-input" id="rtp-setting" type="text" inputmode="decimal" value="99.00" autocomplete="off">
               <span class="input-suffix">%</span>
             </div>
             <p class="form-error" id="rtp-setting-error" hidden></p>
@@ -45,12 +44,21 @@
         <h3 class="sim-section-title">Game-Specific Parameters</h3>
         <div class="field-grid">
           <div class="form-group">
-            <label class="form-label" for="hit-rate">Average Player Hit Rate</label>
+            <label class="form-label" for="difficulty">Difficulty</label>
+            <select class="form-input form-select" id="difficulty">
+              <option value="Easy">Easy</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Hard">Hard</option>
+              <option value="Expert">Expert</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cells-pass">Average Cells Passed</label>
             <div class="input-wrap">
-              <input class="form-input" id="hit-rate" type="text" inputmode="decimal" value="50" autocomplete="off">
-              <span class="input-suffix">%</span>
+              <input class="form-input" id="cells-pass" type="text" inputmode="decimal" value="5" autocomplete="off">
+              <span class="input-suffix"></span>
             </div>
-            <p class="form-error" id="hit-rate-error" hidden>Hit rate must be between 0.01% and 99.99%.</p>
+            <p class="form-error" id="cells-pass-error" hidden></p>
           </div>
         </div>
 
@@ -110,8 +118,8 @@
     </footer>
   </div>
 
-  <script>window.RTP_GAME = { code: "DICE" };</script>
-  <script src="../assets/js/rtp-sim/page-common.js"></script>
-  <script src="../assets/js/rtp-sim/hit-rate-page.js"></script>
+  <script>window.RTP_GAME = { code: "BAO", totalCells: 20 };</script>
+  <script src="assets/js/rtp-sim/page-common.js"></script>
+  <script src="assets/js/rtp-sim/chicken-family-page.js"></script>
 </body>
 </html>

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Limbo RTP Simulation | GanPlay</title>
-  <meta name="description" content="Simulate how Limbo actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Keno RTP Simulation | GanPlay</title>
+  <meta name="description" content="Simulate how Keno actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="page">
     <header class="site-header">
-      <h1 class="site-title">Limbo RTP Simulation</h1>
+      <h1 class="site-title">Keno RTP Simulation</h1>
       <p class="site-subtitle">GanPlay Merchant Self-Service RTP Simulation</p>
     </header>
 
@@ -44,12 +44,21 @@
         <h3 class="sim-section-title">Game-Specific Parameters</h3>
         <div class="field-grid">
           <div class="form-group">
-            <label class="form-label" for="hit-rate">Average Player Hit Rate</label>
+            <label class="form-label" for="difficulty">Difficulty</label>
+            <select class="form-input form-select" id="difficulty">
+              <option value="Classic" selected>Classic</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="picks-count">Number of Picks</label>
             <div class="input-wrap">
-              <input class="form-input" id="hit-rate" type="text" inputmode="decimal" value="50" autocomplete="off">
-              <span class="input-suffix">%</span>
+              <input class="form-input" id="picks-count" type="text" inputmode="decimal" value="5" autocomplete="off">
+              <span class="input-suffix"></span>
             </div>
-            <p class="form-error" id="hit-rate-error" hidden>Hit rate must be between 0.01% and 99.99%.</p>
+            <p class="form-error" id="picks-count-error" hidden>Number of picks must be an integer between 1 and 10.</p>
           </div>
         </div>
 
@@ -109,8 +118,7 @@
     </footer>
   </div>
 
-  <script>window.RTP_GAME = { code: "LIMBO" };</script>
-  <script src="../assets/js/rtp-sim/page-common.js"></script>
-  <script src="../assets/js/rtp-sim/hit-rate-page.js"></script>
+  <script src="assets/js/rtp-sim/page-common.js"></script>
+  <script src="assets/js/rtp-sim/keno-page.js"></script>
 </body>
 </html>

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baccarat RTP Simulation | GanPlay</title>
-  <meta name="description" content="Simulate how Baccarat actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Limbo RTP Simulation | GanPlay</title>
+  <meta name="description" content="Simulate how Limbo actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="page">
     <header class="site-header">
-      <h1 class="site-title">Baccarat RTP Simulation</h1>
+      <h1 class="site-title">Limbo RTP Simulation</h1>
       <p class="site-subtitle">GanPlay Merchant Self-Service RTP Simulation</p>
     </header>
 
@@ -42,34 +42,16 @@
         </div>
 
         <h3 class="sim-section-title">Game-Specific Parameters</h3>
-        <p class="param-group-label">Assumed Player Bet-Type Distribution (must sum to 100%)</p>
         <div class="field-grid">
           <div class="form-group">
-            <label class="form-label" for="player-pct">Player</label>
+            <label class="form-label" for="hit-rate">Average Player Hit Rate</label>
             <div class="input-wrap">
-              <input class="form-input" id="player-pct" type="text" inputmode="decimal" value="50" autocomplete="off">
+              <input class="form-input" id="hit-rate" type="text" inputmode="decimal" value="50" autocomplete="off">
               <span class="input-suffix">%</span>
             </div>
-            <p class="form-error" id="player-pct-error" hidden></p>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="banker-pct">Banker</label>
-            <div class="input-wrap">
-              <input class="form-input" id="banker-pct" type="text" inputmode="decimal" value="45" autocomplete="off">
-              <span class="input-suffix">%</span>
-            </div>
-            <p class="form-error" id="banker-pct-error" hidden></p>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="tie-pct">Tie</label>
-            <div class="input-wrap">
-              <input class="form-input" id="tie-pct" type="text" inputmode="decimal" value="5" autocomplete="off">
-              <span class="input-suffix">%</span>
-            </div>
-            <p class="form-error" id="tie-pct-error" hidden></p>
+            <p class="form-error" id="hit-rate-error" hidden>Hit rate must be between 0.01% and 99.99%.</p>
           </div>
         </div>
-        <p class="form-error" id="dist-error" hidden>The proportions must sum to 100% to run the simulation.</p>
 
         <div class="run-area">
           <button class="run-button" id="run-button" type="button">Run Simulation</button>
@@ -127,11 +109,8 @@
     </footer>
   </div>
 
-  <script src="../assets/js/vendor/sha256.js"></script>
-  <script src="../assets/js/vendor/sha512.js"></script>
-  <script src="../assets/js/rtp-sim/engine.js"></script>
-  <script src="../assets/js/rtp-sim/core.js"></script>
-  <script src="../assets/js/rtp-sim/page-common.js"></script>
-  <script src="../assets/js/rtp-sim/baccarat-page.js"></script>
+  <script>window.RTP_GAME = { code: "LIMBO" };</script>
+  <script src="assets/js/rtp-sim/page-common.js"></script>
+  <script src="assets/js/rtp-sim/hit-rate-page.js"></script>
 </body>
 </html>

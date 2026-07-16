@@ -130,7 +130,7 @@
     el("result-section").hidden = true;
     el("result-empty").hidden = true;
 
-    var worker = new Worker("../assets/js/rtp-sim/worker.js");
+    var worker = new Worker("assets/js/rtp-sim/worker.js");
     var finish = function () {
       worker.terminate();
       setRunning(false);

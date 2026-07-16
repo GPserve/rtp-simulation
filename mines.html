@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Blackjack RTP Simulation | GanPlay</title>
-  <meta name="description" content="Simulate how Blackjack actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Mines RTP Simulation | GanPlay</title>
+  <meta name="description" content="Simulate how Mines actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="page">
     <header class="site-header">
-      <h1 class="site-title">Blackjack RTP Simulation</h1>
+      <h1 class="site-title">Mines RTP Simulation</h1>
       <p class="site-subtitle">GanPlay Merchant Self-Service RTP Simulation</p>
     </header>
 
@@ -42,7 +42,24 @@
         </div>
 
         <h3 class="sim-section-title">Game-Specific Parameters</h3>
-        <p class="param-group-label">Blackjack does not take manual strategy parameters; the simulation computes both the &ldquo;theoretical perfect-strategy value&rdquo; and the &ldquo;average-player simulated value&rdquo;.</p>
+        <div class="field-grid">
+          <div class="form-group">
+            <label class="form-label" for="mine-count">Mine Count</label>
+            <div class="input-wrap">
+              <input class="form-input" id="mine-count" type="text" inputmode="decimal" value="3" autocomplete="off">
+              <span class="input-suffix"></span>
+            </div>
+            <p class="form-error" id="mine-count-error" hidden>Mine count must be an integer between 1 and 24.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cells-open">Average Cells Opened</label>
+            <div class="input-wrap">
+              <input class="form-input" id="cells-open" type="text" inputmode="decimal" value="5" autocomplete="off">
+              <span class="input-suffix"></span>
+            </div>
+            <p class="form-error" id="cells-open-error" hidden></p>
+          </div>
+        </div>
 
         <div class="run-area">
           <button class="run-button" id="run-button" type="button">Run Simulation</button>
@@ -67,45 +84,22 @@
         </div>
         <p class="result-setting-line" id="result-setting-line"></p>
 
-        <div class="stat-grid stat-grid--one">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <h3 class="stat-value" id="stat-rtp-value"></h3>
+            <p class="stat-range" id="stat-rtp-range"></p>
+            <p class="stat-label">Expected Actual RTP (90% interval)</p>
+          </div>
           <div class="stat-card">
             <h3 class="stat-value" id="stat-flow-value"></h3>
             <p class="stat-label">Total Turnover (unit)</p>
           </div>
-        </div>
-
-        <div class="bj-groups">
-          <div>
-            <h3 class="bj-group-title">Theoretical Perfect-Strategy Value</h3>
-            <div class="stat-grid stat-grid--two">
-              <div class="stat-card">
-                <h3 class="stat-value" id="bj-theo-rtp"></h3>
-                <p class="stat-label">Theoretical Perfect-Strategy RTP</p>
-              </div>
-              <div class="stat-card">
-                <h3 class="stat-value" id="bj-theo-profit"></h3>
-                <p class="stat-label">Theoretical Gross Profit (unit)</p>
-              </div>
-            </div>
-          </div>
-          <div>
-            <h3 class="bj-group-title">Average-Player Simulated Value</h3>
-            <div class="stat-grid stat-grid--two">
-              <div class="stat-card">
-                <h3 class="stat-value" id="stat-rtp-value"></h3>
-                <p class="stat-range" id="stat-rtp-range"></p>
-                <p class="stat-label">Average-Player Simulated Value (90% interval)</p>
-              </div>
-              <div class="stat-card">
-                <h3 class="stat-value" id="stat-profit-value"></h3>
-                <p class="stat-range" id="stat-profit-range"></p>
-                <p class="stat-label">Average-Player Expected Gross Profit (90% interval, unit)</p>
-              </div>
-            </div>
+          <div class="stat-card">
+            <h3 class="stat-value" id="stat-profit-value"></h3>
+            <p class="stat-range" id="stat-profit-range"></p>
+            <p class="stat-label">Expected Gross Profit (90% interval, unit)</p>
           </div>
         </div>
-
-        <p class="breakdown-note">Theoretical value = exact return rate under perfect basic strategy; the average-player simulated value reflects this engine's assumed common strategy deviations (no split/double/insurance; on a hard hand, stands at hard 12 when dealer shows 2-6, or hard 17 when dealer shows 7, 10, or Ace; on a soft hand, always stands at soft 18).</p>
 
         <section class="sim-card">
           <h2 class="sim-card-title" id="chart-title"></h2>
@@ -123,11 +117,7 @@
     </footer>
   </div>
 
-  <script src="../assets/js/vendor/sha256.js"></script>
-  <script src="../assets/js/vendor/sha512.js"></script>
-  <script src="../assets/js/rtp-sim/engine.js"></script>
-  <script src="../assets/js/rtp-sim/core.js"></script>
-  <script src="../assets/js/rtp-sim/page-common.js"></script>
-  <script src="../assets/js/rtp-sim/blackjack-page.js"></script>
+  <script src="assets/js/rtp-sim/page-common.js"></script>
+  <script src="assets/js/rtp-sim/mines-page.js"></script>
 </body>
 </html>

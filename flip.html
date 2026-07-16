@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plinko RTP Simulation | GanPlay</title>
-  <meta name="description" content="Simulate how Plinko actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
-  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Flip RTP Simulation | GanPlay</title>
+  <meta name="description" content="Simulate how Flip actual RTP converges and fluctuates at a given betting volume on the GanPlay platform.">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="page">
     <header class="site-header">
-      <h1 class="site-title">Plinko RTP Simulation</h1>
+      <h1 class="site-title">Flip RTP Simulation</h1>
       <p class="site-subtitle">GanPlay Merchant Self-Service RTP Simulation</p>
     </header>
 
@@ -31,10 +31,11 @@
             </div>
             <p class="form-error" id="bet-amount-error" hidden>Please enter a valid amount greater than 0.</p>
           </div>
+
           <div class="form-group">
-            <label class="form-label" for="rtp-setting">RTP Setting</label>
+            <label class="form-label" for="rtp-setting">RTP Setting (single round)</label>
             <div class="input-wrap">
-              <input class="form-input" id="rtp-setting" type="text" inputmode="decimal" value="99.00" autocomplete="off">
+              <input class="form-input" id="rtp-setting" type="text" inputmode="decimal" value="99.00" placeholder="Enter RTP, e.g. 96.5" autocomplete="off">
               <span class="input-suffix">%</span>
             </div>
             <p class="form-error" id="rtp-setting-error" hidden></p>
@@ -42,24 +43,45 @@
         </div>
 
         <h3 class="sim-section-title">Game-Specific Parameters</h3>
-        <div class="field-grid">
+        <p class="param-group-label">Assumed proportion of players cashing out at each flip-streak depth (must sum to 100%).</p>
+        <div class="field-grid field-grid--five">
           <div class="form-group">
-            <label class="form-label" for="rows">Rows</label>
+            <label class="form-label" for="depth-1">Depth 1</label>
             <div class="input-wrap">
-              <input class="form-input" id="rows" type="text" inputmode="decimal" value="12" autocomplete="off">
-              <span class="input-suffix"></span>
+              <input class="form-input" id="depth-1" type="text" inputmode="decimal" value="40" autocomplete="off">
+              <span class="input-suffix">%</span>
             </div>
-            <p class="form-error" id="rows-error" hidden>Rows must be an integer between 8 and 16.</p>
           </div>
           <div class="form-group">
-            <label class="form-label" for="risk">Risk Level</label>
-            <select class="form-input form-select" id="risk">
-              <option value="Low">Low</option>
-              <option value="Medium" selected>Medium</option>
-              <option value="High">High</option>
-            </select>
+            <label class="form-label" for="depth-2">Depth 2</label>
+            <div class="input-wrap">
+              <input class="form-input" id="depth-2" type="text" inputmode="decimal" value="25" autocomplete="off">
+              <span class="input-suffix">%</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="depth-3">Depth 3</label>
+            <div class="input-wrap">
+              <input class="form-input" id="depth-3" type="text" inputmode="decimal" value="15" autocomplete="off">
+              <span class="input-suffix">%</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="depth-4">Depth 4</label>
+            <div class="input-wrap">
+              <input class="form-input" id="depth-4" type="text" inputmode="decimal" value="10" autocomplete="off">
+              <span class="input-suffix">%</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="depth-5">Depth 5+</label>
+            <div class="input-wrap">
+              <input class="form-input" id="depth-5" type="text" inputmode="decimal" value="10" autocomplete="off">
+              <span class="input-suffix">%</span>
+            </div>
           </div>
         </div>
+        <p class="form-error" id="depth-error" hidden>The proportions must sum to 100% to run the simulation.</p>
 
         <div class="run-area">
           <button class="run-button" id="run-button" type="button">Run Simulation</button>
@@ -88,7 +110,7 @@
           <div class="stat-card">
             <h3 class="stat-value" id="stat-rtp-value"></h3>
             <p class="stat-range" id="stat-rtp-range"></p>
-            <p class="stat-label">Expected Actual RTP (90% interval)</p>
+            <p class="stat-label">Weighted Expected Actual RTP (90% interval)</p>
           </div>
           <div class="stat-card">
             <h3 class="stat-value" id="stat-flow-value"></h3>
@@ -100,6 +122,22 @@
             <p class="stat-label">Expected Gross Profit (90% interval, unit)</p>
           </div>
         </div>
+
+        <section class="sim-card">
+          <h2 class="sim-card-title" id="breakdown-title"></h2>
+          <table class="breakdown-table">
+            <thead>
+              <tr>
+                <th>Flip Depth</th>
+                <th>Multiplier at Depth</th>
+                <th>Actual RTP at Depth</th>
+                <th>Assumed Player Share</th>
+              </tr>
+            </thead>
+            <tbody id="breakdown-body"></tbody>
+          </table>
+          <p class="breakdown-note">Depth 5+ is a merged bucket value (computed as depth = 5, not accumulated further).</p>
+        </section>
 
         <section class="sim-card">
           <h2 class="sim-card-title" id="chart-title"></h2>
@@ -117,7 +155,11 @@
     </footer>
   </div>
 
-  <script src="../assets/js/rtp-sim/page-common.js"></script>
-  <script src="../assets/js/rtp-sim/plinko-page.js"></script>
+  <script src="assets/js/vendor/sha256.js"></script>
+  <script src="assets/js/vendor/sha512.js"></script>
+  <script src="assets/js/rtp-sim/engine.js"></script>
+  <script src="assets/js/rtp-sim/core.js"></script>
+  <script src="assets/js/rtp-sim/page-common.js"></script>
+  <script src="assets/js/rtp-sim/flip-page.js"></script>
 </body>
 </html>
