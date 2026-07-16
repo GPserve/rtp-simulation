@@ -83,7 +83,10 @@
       config.betAmount.toLocaleString("en-US") +
       " × " + SIMULATION_COUNT.toLocaleString("en-US") +
       " bets, total turnover " + fmtMoney(main.totalFlow) + ")";
-    el("result-setting-line").textContent = "RTP Setting: " + fmtPct(config.rtp);
+    el("result-setting-line").textContent =
+      "RTP Setting: " + fmtPct(config.rtp) +
+      " · 90% interval from 20 repeat samples of " +
+      SIMULATION_COUNT.toLocaleString("en-US") + " bets each";
 
     el("stat-rtp-value").textContent = fmtPct(main.actualRtp.mean);
     el("stat-rtp-range").textContent =
@@ -96,7 +99,7 @@
     el("chart-title").textContent =
       "Convergence Curve (for current RTP setting, " + fmtPct(config.rtp) + ")";
     el("chart-legend-simulated").textContent =
-      "Simulated RTP (" + fmtPct(config.rtp) + " setting)";
+      "Simulated RTP (" + fmtPct(config.rtp) + " setting, one sample per volume)";
     el("chart-legend-theoretical").textContent =
       "Theoretical Target " + fmtPct(config.rtp);
     renderChart(el("chart-container"), result.convergence, config.rtp);
