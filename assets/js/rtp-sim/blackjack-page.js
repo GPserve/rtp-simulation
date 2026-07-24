@@ -9,12 +9,15 @@
   var P = window.RtpSimPage;
   var el = P.el;
 
+  // AI 換皮頁複用本腳本：<body data-game-code="AI_BLACKJACK">（引擎 registry alias、數學同本體）。
+  var GAME_CODE = document.body.dataset.gameCode || "BLACKJACK";
+
   var betInput = el("bet-amount");
   var rtpInput = el("rtp-setting");
 
   var validate = function () {
     var bet = P.fieldNumber(betInput, el("bet-amount-error"), { positive: true });
-    var rtp = P.validateRtpField(rtpInput, el("rtp-setting-error"), "BLACKJACK");
+    var rtp = P.validateRtpField(rtpInput, el("rtp-setting-error"), GAME_CODE);
     if (bet === null || rtp === null) return null;
     return { betAmount: bet, rtp: rtp };
   };
@@ -61,7 +64,7 @@
     var fields = validate();
     if (!fields) return;
     var config = {
-      gameCode: "BLACKJACK",
+      gameCode: GAME_CODE,
       count: P.SIMULATION_COUNT,
       betAmount: fields.betAmount,
       rtp: fields.rtp,

@@ -1,19 +1,20 @@
-// Baccarat RTP simulation page: assumed player bet-type distribution
-// (player / banker / tie, must sum to 100%). RTP validation uses the
-// engine's dedicated baccarat bounds (min 55.39, per-bet-type
-// reachability), which is why this page loads engine.js + core.js.
+// Dragon Tiger RTP simulation page: assumed player bet-type distribution
+// (dragon / tiger / tie, must sum to 100%). RTP validation uses the generic
+// range (linear proportional scaling, no dedicated floor / reachability —
+// see engine paytables/dragontiger.js). The AI Dragon Tiger re-skin page
+// reuses this script via <body data-game-code="AI_DRAGON_TIGER"> (identical
+// math, alias in the engine registry).
 (function () {
   "use strict";
 
   var P = window.RtpSimPage;
   var el = P.el;
 
-  // AI 換皮頁複用本腳本：<body data-game-code="AI_BACCARAT">（引擎 registry alias、數學同本體）。
-  var GAME_CODE = document.body.dataset.gameCode || "BACCARAT";
+  var GAME_CODE = document.body.dataset.gameCode || "DRAGON_TIGER";
 
   var betInput = el("bet-amount");
   var rtpInput = el("rtp-setting");
-  var pctInputs = ["player-pct", "banker-pct", "tie-pct"].map(el);
+  var pctInputs = ["dragon-pct", "tiger-pct", "tie-pct"].map(el);
   var distError = el("dist-error");
 
   var validate = function () {
@@ -41,8 +42,8 @@
       betAmount: fields.betAmount,
       rtp: fields.rtp,
       params: {
-        playerPct: fields.pcts[0],
-        bankerPct: fields.pcts[1],
+        dragonPct: fields.pcts[0],
+        tigerPct: fields.pcts[1],
         tiePct: fields.pcts[2],
       },
     };

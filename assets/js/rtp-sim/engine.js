@@ -5080,7 +5080,27 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
   return cards;
 };
 
-return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult };
+/**
+ * generate_dragontiger_result 移植：回傳長度 2 的牌流（enums/card 編碼值）。
+ * 與 generateBaccaratResult 逐位元組同源（家族 sliding window），僅消耗數量 6→2。
+ * 牌流索引語意：index 0 = 龍（Dragon）、index 1 = 虎（Tiger）。
+ */
+const generateDragontigerResult = (serverSeed, clientSeed, nonce) => {
+  const cards = [];
+  for (let i = 0; i < 2; i += 1) {
+    const message = `${clientSeed}:${nonce}:${i}`;
+    const hashHex = hmacSha256Hex(serverSeed, message);
+    const index = hexPrefixMod(hashHex, 15, 47);
+    const targetHex = hashHex.slice(index, index + 14);
+    const numBig = BigInt(`0x${targetHex}`) >> 3n;
+    const f = Number(numBig) * TWO_POW_NEG_53;
+    const cardIndex = Math.floor(f * 52);
+    cards.push(BACCARAT_CARD_POOL[cardIndex]);
+  }
+  return cards;
+};
+
+return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateDragontigerResult: generateDragontigerResult };
 });
 
 __define("paytables/dice.js", function () {
@@ -6406,6 +6426,144 @@ const simulateOneUnit = (
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
 });
 
+__define("paytables/dragontiger.js", function () {
+/**
+ * 逐位元組移植自 mini_api modules/client/game/dragontiger/dragontiger_probability.py
+ * + dragontiger_paytable.py + dragontiger_engine.py::settle_dragontiger（2026-07-24
+ * master 現行「基本盤等比縮放」模型）。
+ *
+ * 無限副牌機率（解析封閉解）：P(和) = 13×(1/13)² = 1/13、P(龍勝) = P(虎勝) = 6/13。
+ * 賠率：multiplier = 1 + weight×scale、scale = effective_rtp / 96.15（全注型統一、
+ * 線性連續無跳躍、無不可達情形、無專屬下界——RTP 合法區間採家族通用 0.01–99.99）。
+ * weight：龍 1／虎 1／和 8（T=96.15 恰為經典盤 2.00／2.00／9.00）。
+ *
+ * 🔴 和局紅線：和局時龍／虎注「輸一半」（退回 stake×0.5），本金返還類、恆定不隨
+ * scale 縮放——絕不可做成 push（退全額即龍虎注 EV=0、主注 RTP=100%、零房邊；
+ * 此為龍虎房邊唯一來源）。
+ * native RTP（T=96.15）：龍／虎 96.15%（含 P_TIE×0.5 半退項）、和 69.23%。
+ */
+const { round2 } = __require("decimal-utils.js");
+const { decodeCardRank } = __require("card.js");
+
+const P_DRAGON_WIN = 6 / 13;
+const P_TIGER_WIN = 6 / 13;
+const P_TIE = 1 / 13;
+
+const BASE_RTP = 96.15;
+const TIE_HALF_RETURN_RATIO = 0.5;
+const WEIGHT = { dragon: 1, tiger: 1, tie: 8 };
+const BET_TYPES = ["dragon", "tiger", "tie"];
+const DRAGON_TIGER_NATIVE_RTP = { dragon: 96.15, tiger: 96.15, tie: 69.23 };
+
+const dragontigerPayout = (betType, stake, effectiveRtp) => {
+  const scale = effectiveRtp / BASE_RTP;
+  const multiplier = 1 + WEIGHT[betType] * scale;
+  return stake * multiplier;
+};
+
+const dragontigerMultiplier = (betType, effectiveRtp) =>
+  round2(dragontigerPayout(betType, 1, effectiveRtp));
+
+/** cards（長度 2 牌流）→ 龍／虎 rank（1=A .. 13=K、花色不比）。 */
+const resolveDragonTigerHand = (cards) => ({
+  dragonRank: decodeCardRank(cards[0]),
+  tigerRank: decodeCardRank(cards[1]),
+});
+
+const settleDragontiger = ({
+  dragonBet,
+  tigerBet,
+  tieBet,
+  dragonRank,
+  tigerRank,
+  effectiveRtp,
+}) => {
+  let dragonResult;
+  let tigerResult;
+  let tieResult;
+  if (dragonRank > tigerRank) {
+    [dragonResult, tigerResult, tieResult] = [1, 0, 0];
+  } else if (tigerRank > dragonRank) {
+    [dragonResult, tigerResult, tieResult] = [0, 1, 0];
+  } else {
+    [dragonResult, tigerResult, tieResult] = [2, 2, 1];
+  }
+
+  let dragonWin = 0;
+  if (dragonResult === 1)
+    dragonWin = round2(dragontigerPayout("dragon", dragonBet, effectiveRtp));
+  else if (dragonResult === 2) dragonWin = round2(dragonBet * TIE_HALF_RETURN_RATIO); // 退半、絕非 push
+
+  let tigerWin = 0;
+  if (tigerResult === 1)
+    tigerWin = round2(dragontigerPayout("tiger", tigerBet, effectiveRtp));
+  else if (tigerResult === 2) tigerWin = round2(tigerBet * TIE_HALF_RETURN_RATIO); // 退半、絕非 push
+
+  let tieWin = 0;
+  if (tieResult === 1) tieWin = round2(dragontigerPayout("tie", tieBet, effectiveRtp));
+
+  const totalBet = dragonBet + tigerBet + tieBet;
+  const totalWin = dragonWin + tigerWin + tieWin;
+
+  let matchStatus;
+  if (totalWin > totalBet) matchStatus = 1;
+  else if (totalWin < totalBet) matchStatus = 0;
+  else matchStatus = 2;
+
+  return { dragonResult: dragonResult, tigerResult: tigerResult, tieResult: tieResult, dragonWin: dragonWin, tigerWin: tigerWin, tieWin: tieWin, totalBet: totalBet, totalWin: totalWin, matchStatus: matchStatus };
+};
+
+return { P_DRAGON_WIN: P_DRAGON_WIN, P_TIGER_WIN: P_TIGER_WIN, P_TIE: P_TIE, BASE_RTP: BASE_RTP, TIE_HALF_RETURN_RATIO: TIE_HALF_RETURN_RATIO, BET_TYPES: BET_TYPES, DRAGON_TIGER_NATIVE_RTP: DRAGON_TIGER_NATIVE_RTP, dragontigerPayout: dragontigerPayout, dragontigerMultiplier: dragontigerMultiplier, resolveDragonTigerHand: resolveDragonTigerHand, settleDragontiger: settleDragontiger };
+});
+
+__define("games/dragontiger.js", function () {
+/**
+ * DRAGON_TIGER 單筆模擬。遊戲專屬參數：玩家投注類型分布假設（龍／虎／和 各佔比 %，
+ * 需總和 100%）。每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，
+ * 非遊戲結果 RNG，見 random-choice.js 說明），僅該注型下注、其餘兩注型金額為 0。
+ *
+ * 注意（與 BACCARAT 舊反解模型註解不同）：基本盤等比縮放下三注型 native RTP 不同
+ * （龍／虎 96.15、和 69.23），期望實際 RTP 隨投注分布而變——RTP Setting 是賠率
+ * 縮放旋鈕（T=96.15 恰為經典盤）、非各注型實際回報率承諾，模擬結果如實反映分布差。
+ */
+const { generateDragontigerResult } = __require("seed.js");
+const { resolveDragonTigerHand, settleDragontiger } = __require("paytables/dragontiger.js");
+const { weightedChoiceIndex } = __require("games/random-choice.js");
+
+const CLASSIFICATION = "A";
+
+const DEFAULT_PARAMS = { dragonPct: 48, tigerPct: 48, tiePct: 4 };
+
+const BET_TYPES = ["dragon", "tiger", "tie"];
+
+const simulateOneUnit = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  { dragonPct, tigerPct, tiePct, betAmount, rtp },
+) => {
+  const cards = generateDragontigerResult(serverSeed, clientSeed, nonce);
+  const hand = resolveDragonTigerHand(cards);
+
+  const chosenIdx = weightedChoiceIndex([dragonPct, tigerPct, tiePct]);
+  const chosenType = BET_TYPES[chosenIdx];
+
+  const settle = settleDragontiger({
+    dragonBet: chosenType === "dragon" ? betAmount : 0,
+    tigerBet: chosenType === "tiger" ? betAmount : 0,
+    tieBet: chosenType === "tie" ? betAmount : 0,
+    dragonRank: hand.dragonRank,
+    tigerRank: hand.tigerRank,
+    effectiveRtp: rtp,
+  });
+
+  const win = settle.totalWin;
+  return { invested: betAmount, win: win, profit: win - betAmount };
+};
+
+return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
+});
+
 __define("games/baccarat.js", function () {
 /**
  * BACCARAT 單筆模擬（A 類——三注型各自反解皆命中同一 RTP 設定值，故任一投注
@@ -6608,7 +6766,7 @@ return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulat
 
 __define("registry.js", function () {
 /**
- * 12 款遊戲的模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
+ * 13 款遊戲＋3 款 AI 換皮 alias 的模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
  * classification 對齊 Brief 策略依賴分類：
  *   A = 策略無關（僅影響波動幅度，期望 RTP 恆等於設定值）
  *   B = 策略深度依賴（FLIP，結果需按深度分列）
@@ -6622,6 +6780,7 @@ const chicken = __require("games/chicken.js");
 const plinko = __require("games/plinko.js");
 const wheel = __require("games/wheel.js");
 const baccarat = __require("games/baccarat.js");
+const dragontiger = __require("games/dragontiger.js");
 const flip = __require("games/flip.js");
 const blackjack = __require("games/blackjack.js");
 const { TOTAL_CELLS_BY_GAME } = __require("games/chicken.js");
@@ -6685,7 +6844,19 @@ const GAME_REGISTRY = {
     simulateOneUnit: blackjack.simulateOneUnit,
     defaultParams: blackjack.DEFAULT_PARAMS,
   },
+  DRAGON_TIGER: {
+    classification: "A",
+    simulateOneUnit: dragontiger.simulateOneUnit,
+    defaultParams: dragontiger.DEFAULT_PARAMS,
+  },
 };
+
+// AI 換皮（純換皮：玩法／賠率／公平性生成／RTP 縮放與本體完全相同，僅 game code
+// 與事件命名空間不同）：模擬入口 alias 至本體 entry、數學零分歧。
+const AI_SKIN_ALIASES = { AI_BLACKJACK: "BLACKJACK", AI_BACCARAT: "BACCARAT", AI_DRAGON_TIGER: "DRAGON_TIGER" };
+Object.keys(AI_SKIN_ALIASES).forEach((aiCode) => {
+  GAME_REGISTRY[aiCode] = GAME_REGISTRY[AI_SKIN_ALIASES[aiCode]];
+});
 
 const GAME_CODES = Object.keys(GAME_REGISTRY);
 
@@ -6716,12 +6887,16 @@ const GENERIC_MAX = 99.99;
  *   reasonKey 為 i18n key 後綴（見 locales pages/risk/rtp-simulation.js
  *   validation.* 段），valid=true 時為 null。
  */
+// AI 換皮 alias（bounds 隨本體、與 registry.js AI_SKIN_ALIASES 對應）。
+const AI_SKIN_BOUNDS_ALIASES = { AI_BLACKJACK: "BLACKJACK", AI_BACCARAT: "BACCARAT", AI_DRAGON_TIGER: "DRAGON_TIGER" };
+
 const validateRtp = (gameCode, rtp) => {
+  const resolvedCode = AI_SKIN_BOUNDS_ALIASES[gameCode] || gameCode;
   if (!Number.isFinite(rtp)) {
     return { valid: false, reasonKey: "invalid_number" };
   }
 
-  if (gameCode === "BLACKJACK") {
+  if (resolvedCode === "BLACKJACK") {
     if (rtp < BLACKJACK_MIN_EFFECTIVE_RTP) {
       return { valid: false, reasonKey: "below_minimum" };
     }
@@ -6734,7 +6909,7 @@ const validateRtp = (gameCode, rtp) => {
     return { valid: true, reasonKey: null };
   }
 
-  if (gameCode === "BACCARAT") {
+  if (resolvedCode === "BACCARAT") {
     if (rtp < BACCARAT_MIN_EFFECTIVE_RTP) {
       return { valid: false, reasonKey: "below_minimum" };
     }
@@ -6747,7 +6922,8 @@ const validateRtp = (gameCode, rtp) => {
     return { valid: true, reasonKey: null };
   }
 
-  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL）
+  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL/DRAGON_TIGER——
+  // 龍虎為線性等比縮放、連續無跳躍、無不可達，見 paytables/dragontiger.js）
   if (rtp < GENERIC_MIN || rtp > GENERIC_MAX) {
     return { valid: false, reasonKey: "out_of_range" };
   }
@@ -6768,6 +6944,10 @@ const RTP_FLOOR_SOURCE = {
   BACCARAT: "dedicated",
   BLACKJACK: "dedicated",
   FLIP: "generic",
+  DRAGON_TIGER: "generic",
+  AI_BLACKJACK: "dedicated (alias BLACKJACK)",
+  AI_BACCARAT: "dedicated (alias BACCARAT)",
+  AI_DRAGON_TIGER: "generic (alias DRAGON_TIGER)",
 };
 
 return { validateRtp: validateRtp, RTP_FLOOR_SOURCE: RTP_FLOOR_SOURCE };
