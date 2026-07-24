@@ -5580,8 +5580,17 @@ return { RISKS: RISKS, VALID_SEGMENTS: VALID_SEGMENTS, BASE_RTP: BASE_RTP, PAYOU
 
 __define("paytables/baccarat.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/baccarat_probability.py +
- * baccarat_paytable.py + baccarat_rules.py + baccarat_engine.py。
+ * 逐位元組移植自 mini_api modules/client/game/baccarat/baccarat_probability.py +
+ * baccarat_paytable.py + baccarat_rules.py + baccarat_engine.py（2026-07-24 對齊
+ * mini_api 現行「基本盤等比縮放」模型——2026-07-17 定案、推翻舊「三注型各自精確
+ * 反解」模型；本檔舊反解實作〔per-betType scaleFor＋clamp＋55.39 下界＋可達性〕
+ * 已隨之移除，RTP 合法區間改採家族通用 0.01–99.99，見 rtp-bounds.js）。
+ *
+ * 賠率：multiplier = 1 + weight×scale、scale = effective_rtp / 98.90（全注型統一、
+ * 基準＝基本盤自身官方 RTP、線性連續無跳躍、無不可達）。weight：閒 1／莊 0.95（含
+ * 佣）／和 8（T=98.90 恰為經典盤 2.00／1.95／9.00）。三注型實際 RTP 保留經典盤
+ * 相對差、不再各自等於 T——T 是縮放輸入、非各注型獨立達成的目標值。
+ * push（和局時閒／莊注）恆不縮放、全額退回。
  *
  * 機率常數（P_PLAYER_WIN / P_BANKER_WIN / P_TIE）為窮舉精確分數，直接取
  * mini_api 實際跑出的分子/分母（見 __fixtures__/baccarat_constants.json）硬編碼，
@@ -5601,66 +5610,23 @@ const BET_TYPES = ["player", "banker", "tie"];
 
 const WEIGHT = { player: 1, banker: 0.95, tie: 8 };
 
-const BACCARAT_MIN_EFFECTIVE_RTP = 55.39;
+const BASE_RTP = 98.9;
+// native RTP（T=98.90、scale=1 經典盤下三注型實際 RTP；與縮放基準 label 98.90 為
+// 不同概念）——新模型 scale=1 定義下與舊模型數值相同（mini_api docstring 明文）。
 const BACCARAT_NATIVE_RTP = { player: 98.77, banker: 98.94, tie: 85.88 };
 
-const winProbability = (betType) => {
-  if (betType === "player") return P_PLAYER_WIN;
-  if (betType === "banker") return P_BANKER_WIN;
-  if (betType === "tie") return P_TIE;
-  throw new Error(`unknown baccarat bet_type: ${betType}`);
-};
-
-const clampEffectiveRtp = (effectiveRtp) => {
-  const clamped = round2(effectiveRtp);
-  if (clamped < BACCARAT_MIN_EFFECTIVE_RTP) return BACCARAT_MIN_EFFECTIVE_RTP;
-  if (clamped > 99.99) return 99.99;
-  return clamped;
-};
-
-const scaleFor = (betType, effectiveRtp) => {
-  const target = effectiveRtp / 100;
-  if (betType === "tie") {
-    return (target / P_TIE - 1) / WEIGHT.tie;
-  }
-  const pWin = winProbability(betType);
-  return ((target - P_TIE) / pWin - 1) / WEIGHT[betType];
-};
-
-const rtpFromScale = (betType, scale) => {
-  const weight = WEIGHT[betType];
-  let rtp;
-  if (betType === "tie") {
-    rtp = P_TIE * (1 + weight * scale);
-  } else {
-    const pWin = winProbability(betType);
-    rtp = pWin * (1 + weight * scale) + P_TIE;
-  }
-  return round2(rtp * 100);
-};
-
-/** stake × 該注型倍率，全精度（不 quantize，結算實際使用）。 */
+/** stake × 該注型倍率，全精度（不 quantize，結算實際使用）。
+ * scale = effective_rtp / 98.90（全注型統一，任意 effective_rtp 皆有定義，
+ * 無需防禦性夾制——對齊 mini_api baccarat_payout total function 語意）。 */
 const baccaratPayout = (betType, stake, effectiveRtp) => {
-  const clamped = clampEffectiveRtp(effectiveRtp);
-  const scale = scaleFor(betType, clamped);
-  const weight = WEIGHT[betType];
-  const multiplier = 1 + weight * scale;
+  const scale = effectiveRtp / BASE_RTP;
+  const multiplier = 1 + WEIGHT[betType] * scale;
   return stake * multiplier;
 };
 
 /** effective_rtp → 該注型賠率倍率，quantize 2 位，純供顯示用。 */
 const baccaratMultiplier = (betType, effectiveRtp) =>
   round2(baccaratPayout(betType, 1, effectiveRtp));
-
-/** 三注型須皆可達，T 才整體有效。 */
-const baccaratRtpAchievable = (effectiveRtp) => {
-  const target = round2(effectiveRtp);
-  const clamped = clampEffectiveRtp(effectiveRtp);
-  return BET_TYPES.every((betType) => {
-    const scale = scaleFor(betType, clamped);
-    return rtpFromScale(betType, scale) === target;
-  });
-};
 
 // ---------------- baccarat_rules.py ----------------
 
@@ -5803,7 +5769,7 @@ const settleBaccarat = ({
   };
 };
 
-return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BACCARAT_MIN_EFFECTIVE_RTP: BACCARAT_MIN_EFFECTIVE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, baccaratRtpAchievable: baccaratRtpAchievable, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
+return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BASE_RTP: BASE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
 });
 
 __define("paytables/blackjack-engine.js", function () {
@@ -6566,8 +6532,10 @@ return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulat
 
 __define("games/baccarat.js", function () {
 /**
- * BACCARAT 單筆模擬（A 類——三注型各自反解皆命中同一 RTP 設定值，故任一投注
- * 類型分布下期望 RTP 恆等於設定值，僅波動幅度隨分布不同）。
+ * BACCARAT 單筆模擬（2026-07-24 對齊現行基本盤等比縮放：三注型 native RTP 不同
+ * 〔閒 98.77／莊 98.94／和 85.88〕，期望實際 RTP 隨投注分布而變——RTP Setting 是
+ * 賠率縮放旋鈕〔T=98.90 恰為經典盤〕、非各注型實際回報率承諾；舊反解模型的
+ * 「任一分布期望恆等於設定值」性質已不成立）。
  * 遊戲專屬參數：玩家投注類型分布假設（閒／莊／和 各佔比 %，需總和 100%）。
  * 每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，非遊戲結果
  * RNG，見 random-choice.js 說明），僅該注型下注、其餘兩注型金額為 0。
@@ -6875,7 +6843,6 @@ __define("rtp-bounds.js", function () {
  * 列出哪些遊戲使用通用底線）。
  */
 const { BLACKJACK_MIN_EFFECTIVE_RTP, blackjackRtpAchievable } = __require("paytables/blackjack.js");
-const { BACCARAT_MIN_EFFECTIVE_RTP, baccaratRtpAchievable } = __require("paytables/baccarat.js");
 
 const GENERIC_MIN = 0.01;
 const GENERIC_MAX = 99.99;
@@ -6909,21 +6876,9 @@ const validateRtp = (gameCode, rtp) => {
     return { valid: true, reasonKey: null };
   }
 
-  if (resolvedCode === "BACCARAT") {
-    if (rtp < BACCARAT_MIN_EFFECTIVE_RTP) {
-      return { valid: false, reasonKey: "below_minimum" };
-    }
-    if (rtp > GENERIC_MAX) {
-      return { valid: false, reasonKey: "above_maximum" };
-    }
-    if (!baccaratRtpAchievable(rtp)) {
-      return { valid: false, reasonKey: "unreachable" };
-    }
-    return { valid: true, reasonKey: null };
-  }
-
-  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL/DRAGON_TIGER——
-  // 龍虎為線性等比縮放、連續無跳躍、無不可達，見 paytables/dragontiger.js）
+  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL/BACCARAT/
+  // DRAGON_TIGER——baccarat 2026-07-17 改基本盤等比縮放後無專屬下界〔後端
+  // merchant/game.py 同步改家族通用校驗〕；龍虎同模型，皆線性連續無不可達）
   if (rtp < GENERIC_MIN || rtp > GENERIC_MAX) {
     return { valid: false, reasonKey: "out_of_range" };
   }
@@ -6941,12 +6896,12 @@ const RTP_FLOOR_SOURCE = {
   PENGUIN: "generic",
   PLINKO: "generic",
   WHEEL: "generic",
-  BACCARAT: "dedicated",
+  BACCARAT: "generic",
   BLACKJACK: "dedicated",
   FLIP: "generic",
   DRAGON_TIGER: "generic",
   AI_BLACKJACK: "dedicated (alias BLACKJACK)",
-  AI_BACCARAT: "dedicated (alias BACCARAT)",
+  AI_BACCARAT: "generic (alias BACCARAT)",
   AI_DRAGON_TIGER: "generic (alias DRAGON_TIGER)",
 };
 

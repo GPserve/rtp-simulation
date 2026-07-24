@@ -1,7 +1,7 @@
 // Baccarat RTP simulation page: assumed player bet-type distribution
 // (player / banker / tie, must sum to 100%). RTP validation uses the
-// engine's dedicated baccarat bounds (min 55.39, per-bet-type
-// reachability), which is why this page loads engine.js + core.js.
+// generic range (proportional base-board scaling since 2026-07-17 — no
+// dedicated floor / reachability), aligned with mini_api merchant checks.
 (function () {
   "use strict";
 
