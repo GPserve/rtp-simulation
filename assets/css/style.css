@@ -75,6 +75,37 @@ body {
   margin-bottom: 0;
 }
 
+/* Entry page: game category filter (All / Original / Poker) */
+.game-filter {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.game-filter-button {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.game-filter-button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.game-filter-button.is-active {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
+}
+
 /* Entry page: game navigation list */
 .game-list {
   margin-top: 1.25rem;
@@ -99,6 +130,11 @@ body {
 
 .game-list-item:hover {
   border-color: var(--color-accent);
+}
+
+/* Class display beats the UA [hidden] rule, so filtering needs an explicit override */
+.game-list-item[hidden] {
+  display: none;
 }
 
 .game-list-name {
