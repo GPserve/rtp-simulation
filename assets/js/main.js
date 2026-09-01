@@ -1,4 +1,4 @@
-// GanPlay rtp-simulation entry page script: game category filter (All / Original / Poker)
+// GanPlay rtp-simulation entry page script: game category filter (All / Original / Poker / Slot)
 (() => {
   const buttons = Array.from(document.querySelectorAll('.game-filter-button'));
   const items = Array.from(document.querySelectorAll('.game-list-item'));

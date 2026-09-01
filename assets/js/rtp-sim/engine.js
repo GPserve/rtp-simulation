@@ -5081,26 +5081,49 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * generate_dragontiger_result 移植：回傳長度 2 的牌流（enums/card 編碼值）。
- * 與 generateBaccaratResult 逐位元組同源（家族 sliding window），僅消耗數量 6→2。
- * 牌流索引語意：index 0 = 龍（Dragon）、index 1 = 虎（Tiger）。
+ * generate_slot_result 移植（`services/seed_service.py:584-620`，HMAC-SHA256 byte 流）。
+ *
+ * 演算法（與 Python 逐位元組對應）：
+ *   ① byte 流：HMAC-SHA256(key=serverSeed, msg=`${clientSeed}:${nonce}:${cursor}`)，
+ *      cursor 自 0 遞增、每輪產出 32 bytes 依序消耗（形狀同 generateChickenResult）。
+ *   ② bytes→float：每軸依序消耗 4 bytes，f = Σ byte[i] / 256^(i+1)，值域 [0, 1)。
+ *   ③ 停止位置：stop = floor(f × reelSizes[i])。
+ *
+ * @param {number[]} reelSizes 各軸環帶長度；長度＝軸數
+ * @returns {number[]} 各軸停止位置（環帶索引）
  */
-const generateDragontigerResult = (serverSeed, clientSeed, nonce) => {
-  const cards = [];
-  for (let i = 0; i < 2; i += 1) {
-    const message = `${clientSeed}:${nonce}:${i}`;
-    const hashHex = hmacSha256Hex(serverSeed, message);
-    const index = hexPrefixMod(hashHex, 15, 47);
-    const targetHex = hashHex.slice(index, index + 14);
-    const numBig = BigInt(`0x${targetHex}`) >> 3n;
-    const f = Number(numBig) * TWO_POW_NEG_53;
-    const cardIndex = Math.floor(f * 52);
-    cards.push(BACCARAT_CARD_POOL[cardIndex]);
+const generateSlotResult = (serverSeed, clientSeed, nonce, reelSizes) => {
+  let cursor = 0;
+  let byteBuffer = [];
+  let byteIdx = 0;
+  const nextByte = () => {
+    if (byteIdx >= byteBuffer.length) {
+      const msg = `${clientSeed}:${nonce}:${cursor}`;
+      const hex = hmacSha256Hex(serverSeed, msg);
+      byteBuffer = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        byteBuffer.push(parseInt(hex.slice(i, i + 2), 16));
+      }
+      byteIdx = 0;
+      cursor += 1;
+    }
+    const b = byteBuffer[byteIdx];
+    byteIdx += 1;
+    return b;
+  };
+
+  const stops = [];
+  for (const reelSize of reelSizes) {
+    let f = 0.0;
+    for (let i = 0; i < 4; i += 1) {
+      f += nextByte() / Math.pow(256, i + 1);
+    }
+    stops.push(Math.floor(f * reelSize));
   }
-  return cards;
+  return stops;
 };
 
-return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateDragontigerResult: generateDragontigerResult };
+return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult };
 });
 
 __define("paytables/dice.js", function () {
@@ -5580,17 +5603,8 @@ return { RISKS: RISKS, VALID_SEGMENTS: VALID_SEGMENTS, BASE_RTP: BASE_RTP, PAYOU
 
 __define("paytables/baccarat.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/game/baccarat/baccarat_probability.py +
- * baccarat_paytable.py + baccarat_rules.py + baccarat_engine.py（2026-07-24 對齊
- * mini_api 現行「基本盤等比縮放」模型——2026-07-17 定案、推翻舊「三注型各自精確
- * 反解」模型；本檔舊反解實作〔per-betType scaleFor＋clamp＋55.39 下界＋可達性〕
- * 已隨之移除，RTP 合法區間改採家族通用 0.01–99.99，見 rtp-bounds.js）。
- *
- * 賠率：multiplier = 1 + weight×scale、scale = effective_rtp / 98.90（全注型統一、
- * 基準＝基本盤自身官方 RTP、線性連續無跳躍、無不可達）。weight：閒 1／莊 0.95（含
- * 佣）／和 8（T=98.90 恰為經典盤 2.00／1.95／9.00）。三注型實際 RTP 保留經典盤
- * 相對差、不再各自等於 T——T 是縮放輸入、非各注型獨立達成的目標值。
- * push（和局時閒／莊注）恆不縮放、全額退回。
+ * 逐位元組移植自 mini_api modules/client/baccarat_probability.py +
+ * baccarat_paytable.py + baccarat_rules.py + baccarat_engine.py。
  *
  * 機率常數（P_PLAYER_WIN / P_BANKER_WIN / P_TIE）為窮舉精確分數，直接取
  * mini_api 實際跑出的分子/分母（見 __fixtures__/baccarat_constants.json）硬編碼，
@@ -5610,23 +5624,66 @@ const BET_TYPES = ["player", "banker", "tie"];
 
 const WEIGHT = { player: 1, banker: 0.95, tie: 8 };
 
-const BASE_RTP = 98.9;
-// native RTP（T=98.90、scale=1 經典盤下三注型實際 RTP；與縮放基準 label 98.90 為
-// 不同概念）——新模型 scale=1 定義下與舊模型數值相同（mini_api docstring 明文）。
+const BACCARAT_MIN_EFFECTIVE_RTP = 55.39;
 const BACCARAT_NATIVE_RTP = { player: 98.77, banker: 98.94, tie: 85.88 };
 
-/** stake × 該注型倍率，全精度（不 quantize，結算實際使用）。
- * scale = effective_rtp / 98.90（全注型統一，任意 effective_rtp 皆有定義，
- * 無需防禦性夾制——對齊 mini_api baccarat_payout total function 語意）。 */
+const winProbability = (betType) => {
+  if (betType === "player") return P_PLAYER_WIN;
+  if (betType === "banker") return P_BANKER_WIN;
+  if (betType === "tie") return P_TIE;
+  throw new Error(`unknown baccarat bet_type: ${betType}`);
+};
+
+const clampEffectiveRtp = (effectiveRtp) => {
+  const clamped = round2(effectiveRtp);
+  if (clamped < BACCARAT_MIN_EFFECTIVE_RTP) return BACCARAT_MIN_EFFECTIVE_RTP;
+  if (clamped > 99.99) return 99.99;
+  return clamped;
+};
+
+const scaleFor = (betType, effectiveRtp) => {
+  const target = effectiveRtp / 100;
+  if (betType === "tie") {
+    return (target / P_TIE - 1) / WEIGHT.tie;
+  }
+  const pWin = winProbability(betType);
+  return ((target - P_TIE) / pWin - 1) / WEIGHT[betType];
+};
+
+const rtpFromScale = (betType, scale) => {
+  const weight = WEIGHT[betType];
+  let rtp;
+  if (betType === "tie") {
+    rtp = P_TIE * (1 + weight * scale);
+  } else {
+    const pWin = winProbability(betType);
+    rtp = pWin * (1 + weight * scale) + P_TIE;
+  }
+  return round2(rtp * 100);
+};
+
+/** stake × 該注型倍率，全精度（不 quantize，結算實際使用）。 */
 const baccaratPayout = (betType, stake, effectiveRtp) => {
-  const scale = effectiveRtp / BASE_RTP;
-  const multiplier = 1 + WEIGHT[betType] * scale;
+  const clamped = clampEffectiveRtp(effectiveRtp);
+  const scale = scaleFor(betType, clamped);
+  const weight = WEIGHT[betType];
+  const multiplier = 1 + weight * scale;
   return stake * multiplier;
 };
 
 /** effective_rtp → 該注型賠率倍率，quantize 2 位，純供顯示用。 */
 const baccaratMultiplier = (betType, effectiveRtp) =>
   round2(baccaratPayout(betType, 1, effectiveRtp));
+
+/** 三注型須皆可達，T 才整體有效。 */
+const baccaratRtpAchievable = (effectiveRtp) => {
+  const target = round2(effectiveRtp);
+  const clamped = clampEffectiveRtp(effectiveRtp);
+  return BET_TYPES.every((betType) => {
+    const scale = scaleFor(betType, clamped);
+    return rtpFromScale(betType, scale) === target;
+  });
+};
 
 // ---------------- baccarat_rules.py ----------------
 
@@ -5769,7 +5826,7 @@ const settleBaccarat = ({
   };
 };
 
-return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BASE_RTP: BASE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
+return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BACCARAT_MIN_EFFECTIVE_RTP: BACCARAT_MIN_EFFECTIVE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, baccaratRtpAchievable: baccaratRtpAchievable, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
 });
 
 __define("paytables/blackjack-engine.js", function () {
@@ -6023,6 +6080,140 @@ const blackjackInsurancePayout = (
 };
 
 return { BLACKJACK_GAME_CODE: BLACKJACK_GAME_CODE, BLACKJACK_NATIVE_RTP: BLACKJACK_NATIVE_RTP, BLACKJACK_MIN_EFFECTIVE_RTP: BLACKJACK_MIN_EFFECTIVE_RTP, blackjackRtpScale: blackjackRtpScale, blackjackRtpAchievable: blackjackRtpAchievable, blackjackWinPayout: blackjackWinPayout, blackjackNaturalPayout: blackjackNaturalPayout, blackjackPushPayout: blackjackPushPayout, blackjackInsurancePayout: blackjackInsurancePayout };
+});
+
+__define("paytables/slot.js", function () {
+/**
+ * 老虎機（slot）家族賠付資料：逐值移植自 mini_api
+ * `modules/client/game/slot/fruit_king/fruit_king_config.py` 與
+ * `modules/client/game/slot/bunny_gold/bunny_gold_config.py`。
+ *
+ * 🔴 表體數字與環帶排列是**唯一真相、禁止自行調整**——同 keno/dice 等既有款慣例。
+ * 環帶由產線 `build_reel_strip()` 決定性展開後導出，非手抄。
+ *
+ * 兩款的結構差異（非筆誤）：
+ *   - FRUIT_KING：單一 `WILD`，**自身連中會賠**（在 PAYTABLE 內）。
+ *   - BUNNY_GOLD：四種 `WILD` / `WILD_x2` / `WILD_x3` / `WILD_x5`，**自身不賠**
+ *     （不在 PAYTABLE 內），改為在中獎線上帶「加成」——同線中獎段內各 WILD 的
+ *     加成值**相加**（總和 0 即無倍數），再**乘**上該線賠付。
+ */
+
+/** 20 條固定賠付線（值＝該軸取第幾列，0＝最上）。兩款共用。 */
+const PAYLINES = [
+  [1, 1, 1, 1, 1],
+  [0, 0, 0, 0, 0],
+  [2, 2, 2, 2, 2],
+  [0, 1, 2, 1, 0],
+  [2, 1, 0, 1, 2],
+  [0, 0, 1, 2, 2],
+  [2, 2, 1, 0, 0],
+  [1, 0, 1, 2, 1],
+  [1, 2, 1, 0, 1],
+  [0, 1, 1, 1, 2],
+  [2, 1, 1, 1, 0],
+  [1, 0, 0, 1, 2],
+  [1, 2, 2, 1, 0],
+  [1, 1, 0, 1, 2],
+  [1, 1, 2, 1, 0],
+  [0, 0, 1, 2, 1],
+  [2, 2, 1, 0, 1],
+  [1, 0, 1, 2, 2],
+  [1, 2, 1, 0, 0],
+  [0, 0, 0, 1, 2],
+];
+
+// ─────────────────────────────────────────────────────────
+// FRUIT_KING（水果大亨）
+// ─────────────────────────────────────────────────────────
+
+const FRUIT_KING_NATIVE_RTP = 97.8302;
+
+const FRUIT_KING_PAYTABLE = {
+  H01: { 3: 0.50, 4: 2.50, 5: 6.25 },
+  H02: { 3: 0.50, 4: 3.75, 5: 12.50 },
+  H03: { 3: 0.75, 4: 5.00, 5: 20.00 },
+  H04: { 2: 0.10, 3: 1.25, 4: 5.00, 5: 37.50 },
+  L01: { 2: 0.10, 3: 0.25, 4: 1.25, 5: 5.00 },
+  L02: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L03: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L04: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L05: { 3: 0.25, 4: 2.50, 5: 5.00 },
+  SCATTER: { 2: 2.00, 3: 6.00, 4: 50.00, 5: 500.00 },
+  WILD: { 2: 0.50, 3: 10.00, 4: 100.00, 5: 500.00 },
+};
+
+const FRUIT_KING_STRIPS = [
+  // 軸 1（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 2（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 3（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 4（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 5（43 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L05", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L01", "L01"],
+];
+
+// ─────────────────────────────────────────────────────────
+// BUNNY_GOLD（月兔搗金）
+// ─────────────────────────────────────────────────────────
+
+const BUNNY_GOLD_NATIVE_RTP = 97.8528;
+
+const BUNNY_GOLD_PAYTABLE = {
+  H01: { 3: 0.50, 4: 2.50, 5: 6.25 },
+  H02: { 3: 0.50, 4: 3.75, 5: 12.50 },
+  H03: { 3: 0.75, 4: 5.00, 5: 20.00 },
+  H04: { 2: 0.10, 3: 1.25, 4: 5.00, 5: 37.50 },
+  L01: { 2: 0.10, 3: 0.25, 4: 1.25, 5: 5.00 },
+  L02: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L03: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L04: { 3: 0.25, 4: 1.25, 5: 5.00 },
+  L05: { 3: 0.25, 4: 2.50, 5: 5.00 },
+  SCATTER: { 2: 2.00, 3: 6.00, 4: 50.00, 5: 300.00 },
+};
+
+const BUNNY_GOLD_STRIPS = [
+  // 軸 1（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 2（30 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  // 軸 3（60 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x2", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "SCATTER", "L01", "L02", "L01", "L01", "L01", "L01", "L01"],
+  // 軸 4（120 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x3", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "SCATTER", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "SCATTER", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L01", "L01", "L01", "SCATTER", "L01", "L01", "L01", "L01", "L01", "L01", "L01"],
+  // 軸 5（200 格）
+  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x5", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "SCATTER", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "SCATTER", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "SCATTER", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01"],
+];
+
+/** BUNNY_GOLD 各 WILD 代號帶的加成值（`WILD` 為 0 ＝ 純替代）。 */
+const BUNNY_GOLD_WILD_BONUS = {
+  WILD: 0,
+  WILD_x2: 2,
+  WILD_x3: 3,
+  WILD_x5: 5,
+};
+
+// ─────────────────────────────────────────────────────────
+// 兩款共用的盤面與免轉參數
+// ─────────────────────────────────────────────────────────
+
+const REELS_COUNT = 5;
+const ROWS_COUNT = 3;
+const SCATTER = "SCATTER";
+
+/** 免費旋轉：N 個 SCATTER 觸發、給 award 轉、單局總轉數封在 cap。 */
+const FREE_SPIN = {
+  FRUIT_KING: { trigger: 3, award: 15, cap: 180 },
+  BUNNY_GOLD: { trigger: 3, award: 10, cap: 120 },
+};
+
+/** 兩款的賠付單位皆為「整轉總注」（非線注）。 */
+const LINE_PAY_ON_TOTAL = true;
+const SCATTER_PAYS_ON_TOTAL = true;
+
+return { PAYLINES: PAYLINES, FRUIT_KING_NATIVE_RTP: FRUIT_KING_NATIVE_RTP, FRUIT_KING_PAYTABLE: FRUIT_KING_PAYTABLE, FRUIT_KING_STRIPS: FRUIT_KING_STRIPS, BUNNY_GOLD_NATIVE_RTP: BUNNY_GOLD_NATIVE_RTP, BUNNY_GOLD_PAYTABLE: BUNNY_GOLD_PAYTABLE, BUNNY_GOLD_STRIPS: BUNNY_GOLD_STRIPS, BUNNY_GOLD_WILD_BONUS: BUNNY_GOLD_WILD_BONUS, REELS_COUNT: REELS_COUNT, ROWS_COUNT: ROWS_COUNT, SCATTER: SCATTER, FREE_SPIN: FREE_SPIN, LINE_PAY_ON_TOTAL: LINE_PAY_ON_TOTAL, SCATTER_PAYS_ON_TOTAL: SCATTER_PAYS_ON_TOTAL };
 });
 
 __define("games/random-choice.js", function () {
@@ -6392,150 +6583,10 @@ const simulateOneUnit = (
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
 });
 
-__define("paytables/dragontiger.js", function () {
-/**
- * 逐位元組移植自 mini_api modules/client/game/dragontiger/dragontiger_probability.py
- * + dragontiger_paytable.py + dragontiger_engine.py::settle_dragontiger（2026-07-24
- * master 現行「基本盤等比縮放」模型）。
- *
- * 無限副牌機率（解析封閉解）：P(和) = 13×(1/13)² = 1/13、P(龍勝) = P(虎勝) = 6/13。
- * 賠率：multiplier = 1 + weight×scale、scale = effective_rtp / 96.15（全注型統一、
- * 線性連續無跳躍、無不可達情形、無專屬下界——RTP 合法區間採家族通用 0.01–99.99）。
- * weight：龍 1／虎 1／和 8（T=96.15 恰為經典盤 2.00／2.00／9.00）。
- *
- * 🔴 和局紅線：和局時龍／虎注「輸一半」（退回 stake×0.5），本金返還類、恆定不隨
- * scale 縮放——絕不可做成 push（退全額即龍虎注 EV=0、主注 RTP=100%、零房邊；
- * 此為龍虎房邊唯一來源）。
- * native RTP（T=96.15）：龍／虎 96.15%（含 P_TIE×0.5 半退項）、和 69.23%。
- */
-const { round2 } = __require("decimal-utils.js");
-const { decodeCardRank } = __require("card.js");
-
-const P_DRAGON_WIN = 6 / 13;
-const P_TIGER_WIN = 6 / 13;
-const P_TIE = 1 / 13;
-
-const BASE_RTP = 96.15;
-const TIE_HALF_RETURN_RATIO = 0.5;
-const WEIGHT = { dragon: 1, tiger: 1, tie: 8 };
-const BET_TYPES = ["dragon", "tiger", "tie"];
-const DRAGON_TIGER_NATIVE_RTP = { dragon: 96.15, tiger: 96.15, tie: 69.23 };
-
-const dragontigerPayout = (betType, stake, effectiveRtp) => {
-  const scale = effectiveRtp / BASE_RTP;
-  const multiplier = 1 + WEIGHT[betType] * scale;
-  return stake * multiplier;
-};
-
-const dragontigerMultiplier = (betType, effectiveRtp) =>
-  round2(dragontigerPayout(betType, 1, effectiveRtp));
-
-/** cards（長度 2 牌流）→ 龍／虎 rank（1=A .. 13=K、花色不比）。 */
-const resolveDragonTigerHand = (cards) => ({
-  dragonRank: decodeCardRank(cards[0]),
-  tigerRank: decodeCardRank(cards[1]),
-});
-
-const settleDragontiger = ({
-  dragonBet,
-  tigerBet,
-  tieBet,
-  dragonRank,
-  tigerRank,
-  effectiveRtp,
-}) => {
-  let dragonResult;
-  let tigerResult;
-  let tieResult;
-  if (dragonRank > tigerRank) {
-    [dragonResult, tigerResult, tieResult] = [1, 0, 0];
-  } else if (tigerRank > dragonRank) {
-    [dragonResult, tigerResult, tieResult] = [0, 1, 0];
-  } else {
-    [dragonResult, tigerResult, tieResult] = [2, 2, 1];
-  }
-
-  let dragonWin = 0;
-  if (dragonResult === 1)
-    dragonWin = round2(dragontigerPayout("dragon", dragonBet, effectiveRtp));
-  else if (dragonResult === 2) dragonWin = round2(dragonBet * TIE_HALF_RETURN_RATIO); // 退半、絕非 push
-
-  let tigerWin = 0;
-  if (tigerResult === 1)
-    tigerWin = round2(dragontigerPayout("tiger", tigerBet, effectiveRtp));
-  else if (tigerResult === 2) tigerWin = round2(tigerBet * TIE_HALF_RETURN_RATIO); // 退半、絕非 push
-
-  let tieWin = 0;
-  if (tieResult === 1) tieWin = round2(dragontigerPayout("tie", tieBet, effectiveRtp));
-
-  const totalBet = dragonBet + tigerBet + tieBet;
-  const totalWin = dragonWin + tigerWin + tieWin;
-
-  let matchStatus;
-  if (totalWin > totalBet) matchStatus = 1;
-  else if (totalWin < totalBet) matchStatus = 0;
-  else matchStatus = 2;
-
-  return { dragonResult: dragonResult, tigerResult: tigerResult, tieResult: tieResult, dragonWin: dragonWin, tigerWin: tigerWin, tieWin: tieWin, totalBet: totalBet, totalWin: totalWin, matchStatus: matchStatus };
-};
-
-return { P_DRAGON_WIN: P_DRAGON_WIN, P_TIGER_WIN: P_TIGER_WIN, P_TIE: P_TIE, BASE_RTP: BASE_RTP, TIE_HALF_RETURN_RATIO: TIE_HALF_RETURN_RATIO, BET_TYPES: BET_TYPES, DRAGON_TIGER_NATIVE_RTP: DRAGON_TIGER_NATIVE_RTP, dragontigerPayout: dragontigerPayout, dragontigerMultiplier: dragontigerMultiplier, resolveDragonTigerHand: resolveDragonTigerHand, settleDragontiger: settleDragontiger };
-});
-
-__define("games/dragontiger.js", function () {
-/**
- * DRAGON_TIGER 單筆模擬。遊戲專屬參數：玩家投注類型分布假設（龍／虎／和 各佔比 %，
- * 需總和 100%）。每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，
- * 非遊戲結果 RNG，見 random-choice.js 說明），僅該注型下注、其餘兩注型金額為 0。
- *
- * 注意（與 BACCARAT 舊反解模型註解不同）：基本盤等比縮放下三注型 native RTP 不同
- * （龍／虎 96.15、和 69.23），期望實際 RTP 隨投注分布而變——RTP Setting 是賠率
- * 縮放旋鈕（T=96.15 恰為經典盤）、非各注型實際回報率承諾，模擬結果如實反映分布差。
- */
-const { generateDragontigerResult } = __require("seed.js");
-const { resolveDragonTigerHand, settleDragontiger } = __require("paytables/dragontiger.js");
-const { weightedChoiceIndex } = __require("games/random-choice.js");
-
-const CLASSIFICATION = "A";
-
-const DEFAULT_PARAMS = { dragonPct: 48, tigerPct: 48, tiePct: 4 };
-
-const BET_TYPES = ["dragon", "tiger", "tie"];
-
-const simulateOneUnit = (
-  serverSeed,
-  clientSeed,
-  nonce,
-  { dragonPct, tigerPct, tiePct, betAmount, rtp },
-) => {
-  const cards = generateDragontigerResult(serverSeed, clientSeed, nonce);
-  const hand = resolveDragonTigerHand(cards);
-
-  const chosenIdx = weightedChoiceIndex([dragonPct, tigerPct, tiePct]);
-  const chosenType = BET_TYPES[chosenIdx];
-
-  const settle = settleDragontiger({
-    dragonBet: chosenType === "dragon" ? betAmount : 0,
-    tigerBet: chosenType === "tiger" ? betAmount : 0,
-    tieBet: chosenType === "tie" ? betAmount : 0,
-    dragonRank: hand.dragonRank,
-    tigerRank: hand.tigerRank,
-    effectiveRtp: rtp,
-  });
-
-  const win = settle.totalWin;
-  return { invested: betAmount, win: win, profit: win - betAmount };
-};
-
-return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
-});
-
 __define("games/baccarat.js", function () {
 /**
- * BACCARAT 單筆模擬（2026-07-24 對齊現行基本盤等比縮放：三注型 native RTP 不同
- * 〔閒 98.77／莊 98.94／和 85.88〕，期望實際 RTP 隨投注分布而變——RTP Setting 是
- * 賠率縮放旋鈕〔T=98.90 恰為經典盤〕、非各注型實際回報率承諾；舊反解模型的
- * 「任一分布期望恆等於設定值」性質已不成立）。
+ * BACCARAT 單筆模擬（A 類——三注型各自反解皆命中同一 RTP 設定值，故任一投注
+ * 類型分布下期望 RTP 恆等於設定值，僅波動幅度隨分布不同）。
  * 遊戲專屬參數：玩家投注類型分布假設（閒／莊／和 各佔比 %，需總和 100%）。
  * 每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，非遊戲結果
  * RNG，見 random-choice.js 說明），僅該注型下注、其餘兩注型金額為 0。
@@ -6732,9 +6783,172 @@ const simulateOneUnit = (
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
 });
 
+__define("games/slot.js", function () {
+/**
+ * 老虎機（slot）家族單筆模擬（A 類）：FRUIT_KING／BUNNY_GOLD 共用。
+ *
+ * 逐段移植自 mini_api `modules/client/game/slot/core/slot_engine.py`
+ * （`_line_candidates` / `_match_count` / `_evaluate_line` / `evaluate_spin` /
+ * `run_round`），與 `slot_socket_flow` 的整局彙總。
+ *
+ * 「一個模擬單位」＝一次觸發轉 ＋ 該次觸發的全部免費轉（免轉零投入，不計入分母），
+ * 對齊產線 `RoundOutcome`。
+ *
+ * 🔴 三個容易寫錯、且**不會被真實配置抓到**的地方（產線 `_evaluate_line` docstring
+ * 明列，此處逐一守住）：
+ *   (a) 加成必須在**候選迴圈內**、對該候選自己的中獎段 `cells[0..count)` 求和——
+ *       不得整條線求和一次給所有候選共用。
+ *   (b) 加成必須**參與決勝**——不得先挑賠付表倍數最高的候選、再乘加成。
+ *   (c) 決勝一律在**未經 k 縮放**的有效值上比較——k=0 時比較才不會失去鑑別力。
+ *   加總為 0 時不做乘法，直接沿用原始倍數。
+ */
+const { generateSlotResult } = __require("seed.js");
+const { PAYLINES, REELS_COUNT, ROWS_COUNT, SCATTER, FREE_SPIN, LINE_PAY_ON_TOTAL, FRUIT_KING_PAYTABLE, FRUIT_KING_STRIPS, FRUIT_KING_NATIVE_RTP, BUNNY_GOLD_PAYTABLE, BUNNY_GOLD_STRIPS, BUNNY_GOLD_NATIVE_RTP, BUNNY_GOLD_WILD_BONUS } = __require("paytables/slot.js");
+const { round2 } = __require("decimal-utils.js");
+
+const CLASSIFICATION = "A";
+
+const DEFAULT_PARAMS = {};
+
+/** 各款配置：wildBonus 為「代號 → 加成值」；FRUIT_KING 的 WILD 無加成。 */
+const SLOT_CONFIGS = {
+  FRUIT_KING: {
+    paytable: FRUIT_KING_PAYTABLE,
+    strips: FRUIT_KING_STRIPS,
+    nativeRtp: FRUIT_KING_NATIVE_RTP,
+    wildBonus: { WILD: 0 },
+    freeSpin: FREE_SPIN.FRUIT_KING,
+  },
+  BUNNY_GOLD: {
+    paytable: BUNNY_GOLD_PAYTABLE,
+    strips: BUNNY_GOLD_STRIPS,
+    nativeRtp: BUNNY_GOLD_NATIVE_RTP,
+    wildBonus: BUNNY_GOLD_WILD_BONUS,
+    freeSpin: FREE_SPIN.BUNNY_GOLD,
+  },
+};
+
+/** 依停軸位置組出盤面：board[row][reel]（對齊產線 build_board 的索引順序）。 */
+const buildBoard = (strips, stops) => {
+  const rows = [];
+  for (let row = 0; row < ROWS_COUNT; row += 1) {
+    const line = [];
+    for (let reel = 0; reel < REELS_COUNT; reel += 1) {
+      const strip = strips[reel];
+      line.push(strip[(stops[reel] + row) % strip.length]);
+    }
+    rows.push(line);
+  }
+  return rows;
+};
+
+/** 該線可能的符號解釋（產線 `_line_candidates`）。 */
+const lineCandidates = (cfg, firstSymbol) => {
+  if (firstSymbol === SCATTER) return [];
+  if (!(firstSymbol in cfg.wildBonus)) return [firstSymbol];
+  // WILD 起頭：可替代除 SCATTER 外任一符號。候選一律取自賠付表——
+  // FRUIT_KING 的 WILD 在表內故續為候選；BUNNY_GOLD 的 WILD 系列不在表內，
+  // 天然被排除（自身連中不賠）。
+  return Object.keys(cfg.paytable).filter((s) => s !== SCATTER);
+};
+
+/** 自軸 1 起可視為 candidate 的連續格數（產線 `_match_count`）。 */
+const matchCount = (cfg, cells, candidate) => {
+  let count = 0;
+  for (const symbol of cells) {
+    const isSame = symbol === candidate;
+    const isWildSub = symbol in cfg.wildBonus && !(candidate in cfg.wildBonus);
+    if (!isSame && !isWildSub) break;
+    count += 1;
+  }
+  return count;
+};
+
+/** 單線判定：取有效值（賠付倍數 × 該解釋自己的加成）最高者、不疊加。 */
+const evaluateLine = (cfg, cells) => {
+  let bestEffective = null;
+  for (const candidate of lineCandidates(cfg, cells[0])) {
+    const count = matchCount(cfg, cells, candidate);
+    const multiplier = cfg.paytable[candidate]?.[count];
+    if (multiplier === undefined) continue;
+    // (a) 本候選自己的中獎段內每顆 WILD 的加成相加
+    let bonusSum = 0;
+    for (let i = 0; i < count; i += 1) bonusSum += cfg.wildBonus[cells[i]] ?? 0;
+    // 加總為 0 ⇒ 不做乘法
+    const effective = bonusSum === 0 ? multiplier : multiplier * bonusSum;
+    // (b)(c) 加成參與決勝、且在未縮放值上比較；同值取先出現者
+    if (bestEffective !== null && effective <= bestEffective) continue;
+    bestEffective = effective;
+  }
+  return bestEffective;
+};
+
+/** 盤面上的 SCATTER 格數（兩款皆為單格符號，故格數＝符號數）。 */
+const countScatter = (board) => {
+  let n = 0;
+  for (const row of board) for (const s of row) if (s === SCATTER) n += 1;
+  return n;
+};
+
+/** 單轉：回傳該轉的總賠付倍數（線賠 + scatter 賠）與 SCATTER 數。 */
+const playSpin = (cfg, stops) => {
+  const board = buildBoard(cfg.strips, stops);
+  let lineTotal = 0;
+  for (const payline of PAYLINES) {
+    const cells = [];
+    for (let reel = 0; reel < REELS_COUNT; reel += 1) cells.push(board[payline[reel]][reel]);
+    const best = evaluateLine(cfg, cells);
+    if (best !== null) lineTotal += best;
+  }
+  const scatterCount = countScatter(board);
+  const scatterMultiplier = cfg.paytable[SCATTER]?.[scatterCount] ?? 0;
+  return { multiplier: lineTotal + scatterMultiplier, scatterCount };
+};
+
+/**
+ * 一個模擬單位：觸發轉 ＋ 全部免費轉。
+ *
+ * 免轉的 nonce 沿用產線語意「每轉一個 nonce、逐轉遞增」。
+ */
+const simulateOneUnit = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  { betAmount, rtp, gameCode = "FRUIT_KING" },
+) => {
+  const cfg = SLOT_CONFIGS[gameCode];
+  const k = rtp / cfg.nativeRtp;
+  const reelSizes = cfg.strips.map((s) => s.length);
+  const { trigger, award, cap } = cfg.freeSpin;
+
+  let spinNonce = nonce;
+  const base = playSpin(cfg, generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes));
+  let totalMultiplier = base.multiplier;
+
+  if (base.scatterCount >= trigger) {
+    let granted = Math.min(award, cap);
+    let played = 0;
+    while (played < granted) {
+      spinNonce += 1;
+      const free = playSpin(cfg, generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes));
+      totalMultiplier += free.multiplier;
+      played += 1;
+      if (free.scatterCount >= trigger) granted = Math.min(granted + award, cap);
+    }
+  }
+
+  // 賠付單位＝整轉總注（兩款 line_pay_on_total / scatter_pays_on_total 皆為 true）
+  const unit = LINE_PAY_ON_TOTAL ? betAmount : betAmount / PAYLINES.length;
+  const win = round2(totalMultiplier * unit * k);
+  return { invested: betAmount, win, profit: round2(win - betAmount) };
+};
+
+return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, SLOT_CONFIGS: SLOT_CONFIGS, simulateOneUnit: simulateOneUnit };
+});
+
 __define("registry.js", function () {
 /**
- * 13 款遊戲＋3 款 AI 換皮 alias 的模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
+ * 遊戲模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
  * classification 對齊 Brief 策略依賴分類：
  *   A = 策略無關（僅影響波動幅度，期望 RTP 恆等於設定值）
  *   B = 策略深度依賴（FLIP，結果需按深度分列）
@@ -6748,9 +6962,9 @@ const chicken = __require("games/chicken.js");
 const plinko = __require("games/plinko.js");
 const wheel = __require("games/wheel.js");
 const baccarat = __require("games/baccarat.js");
-const dragontiger = __require("games/dragontiger.js");
 const flip = __require("games/flip.js");
 const blackjack = __require("games/blackjack.js");
+const slot = __require("games/slot.js");
 const { TOTAL_CELLS_BY_GAME } = __require("games/chicken.js");
 
 const chickenFamilyEntry = (gameCode) => ({
@@ -6763,7 +6977,16 @@ const chickenFamilyEntry = (gameCode) => ({
   defaultParams: chicken.DEFAULT_PARAMS,
 });
 
+const slotEntry = (gameCode) => ({
+  classification: "A",
+  simulateOneUnit: (serverSeed, clientSeed, nonce, params) =>
+    slot.simulateOneUnit(serverSeed, clientSeed, nonce, { ...params, gameCode }),
+  defaultParams: slot.DEFAULT_PARAMS,
+});
+
 const GAME_REGISTRY = {
+  FRUIT_KING: slotEntry("FRUIT_KING"),
+  BUNNY_GOLD: slotEntry("BUNNY_GOLD"),
   DICE: {
     classification: "A",
     simulateOneUnit: dice.simulateOneUnit,
@@ -6812,19 +7035,7 @@ const GAME_REGISTRY = {
     simulateOneUnit: blackjack.simulateOneUnit,
     defaultParams: blackjack.DEFAULT_PARAMS,
   },
-  DRAGON_TIGER: {
-    classification: "A",
-    simulateOneUnit: dragontiger.simulateOneUnit,
-    defaultParams: dragontiger.DEFAULT_PARAMS,
-  },
 };
-
-// AI 換皮（純換皮：玩法／賠率／公平性生成／RTP 縮放與本體完全相同，僅 game code
-// 與事件命名空間不同）：模擬入口 alias 至本體 entry、數學零分歧。
-const AI_SKIN_ALIASES = { AI_BLACKJACK: "BLACKJACK", AI_BACCARAT: "BACCARAT", AI_DRAGON_TIGER: "DRAGON_TIGER" };
-Object.keys(AI_SKIN_ALIASES).forEach((aiCode) => {
-  GAME_REGISTRY[aiCode] = GAME_REGISTRY[AI_SKIN_ALIASES[aiCode]];
-});
 
 const GAME_CODES = Object.keys(GAME_REGISTRY);
 
@@ -6843,6 +7054,7 @@ __define("rtp-bounds.js", function () {
  * 列出哪些遊戲使用通用底線）。
  */
 const { BLACKJACK_MIN_EFFECTIVE_RTP, blackjackRtpAchievable } = __require("paytables/blackjack.js");
+const { BACCARAT_MIN_EFFECTIVE_RTP, baccaratRtpAchievable } = __require("paytables/baccarat.js");
 
 const GENERIC_MIN = 0.01;
 const GENERIC_MAX = 99.99;
@@ -6854,16 +7066,12 @@ const GENERIC_MAX = 99.99;
  *   reasonKey 為 i18n key 後綴（見 locales pages/risk/rtp-simulation.js
  *   validation.* 段），valid=true 時為 null。
  */
-// AI 換皮 alias（bounds 隨本體、與 registry.js AI_SKIN_ALIASES 對應）。
-const AI_SKIN_BOUNDS_ALIASES = { AI_BLACKJACK: "BLACKJACK", AI_BACCARAT: "BACCARAT", AI_DRAGON_TIGER: "DRAGON_TIGER" };
-
 const validateRtp = (gameCode, rtp) => {
-  const resolvedCode = AI_SKIN_BOUNDS_ALIASES[gameCode] || gameCode;
   if (!Number.isFinite(rtp)) {
     return { valid: false, reasonKey: "invalid_number" };
   }
 
-  if (resolvedCode === "BLACKJACK") {
+  if (gameCode === "BLACKJACK") {
     if (rtp < BLACKJACK_MIN_EFFECTIVE_RTP) {
       return { valid: false, reasonKey: "below_minimum" };
     }
@@ -6876,9 +7084,20 @@ const validateRtp = (gameCode, rtp) => {
     return { valid: true, reasonKey: null };
   }
 
-  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL/BACCARAT/
-  // DRAGON_TIGER——baccarat 2026-07-17 改基本盤等比縮放後無專屬下界〔後端
-  // merchant/game.py 同步改家族通用校驗〕；龍虎同模型，皆線性連續無不可達）
+  if (gameCode === "BACCARAT") {
+    if (rtp < BACCARAT_MIN_EFFECTIVE_RTP) {
+      return { valid: false, reasonKey: "below_minimum" };
+    }
+    if (rtp > GENERIC_MAX) {
+      return { valid: false, reasonKey: "above_maximum" };
+    }
+    if (!baccaratRtpAchievable(rtp)) {
+      return { valid: false, reasonKey: "unreachable" };
+    }
+    return { valid: true, reasonKey: null };
+  }
+
+  // 通用底線（DICE/MINES/LIMBO/KENO/CHICKEN/BAO/PENGUIN/PLINKO/WHEEL）
   if (rtp < GENERIC_MIN || rtp > GENERIC_MAX) {
     return { valid: false, reasonKey: "out_of_range" };
   }
@@ -6896,13 +7115,9 @@ const RTP_FLOOR_SOURCE = {
   PENGUIN: "generic",
   PLINKO: "generic",
   WHEEL: "generic",
-  BACCARAT: "generic",
+  BACCARAT: "dedicated",
   BLACKJACK: "dedicated",
   FLIP: "generic",
-  DRAGON_TIGER: "generic",
-  AI_BLACKJACK: "dedicated (alias BLACKJACK)",
-  AI_BACCARAT: "generic (alias BACCARAT)",
-  AI_DRAGON_TIGER: "generic (alias DRAGON_TIGER)",
 };
 
 return { validateRtp: validateRtp, RTP_FLOOR_SOURCE: RTP_FLOOR_SOURCE };

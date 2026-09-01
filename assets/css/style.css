@@ -261,6 +261,15 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Fixed game specs (paylines, free spin cap, max payout): shown for reference,
+   not adjustable — muted so they read as facts rather than inputs. */
+.form-input:disabled {
+  color: var(--color-text-muted);
+  background-color: #172033;
+  border-color: #2a3549;
+  cursor: not-allowed;
+}
+
 .form-input:focus {
   outline: none;
   border-color: var(--color-accent);
