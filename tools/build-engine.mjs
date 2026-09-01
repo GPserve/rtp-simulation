@@ -59,6 +59,29 @@ const resolvePath = (fromModule, spec) => {
   return resolved;
 };
 
+// Scrubs internal repository paths, module names and file names out of comment
+// lines before they are baked into the published bundle. Only lines that are
+// unambiguously comments (`//`, `/*`, `*`, `*/`) are touched, so code and
+// string literals are never rewritten. Values are never affected.
+const scrubComments = (source) =>
+  source
+    .split("\n")
+    .map((line) => {
+      if (!/^\s*(\/\/|\/\*|\*)/.test(line)) return line;
+      return line
+        .replace(/(?:[\w.-]+\/)+[\w.-]+\.py(?:::[\w.]+)?/g, "產線模組")
+        .replace(/[\w.-]+\.py(?:::[\w.]+)?/g, "產線模組")
+        .replace(/__(?:fixtures|tests)__(?:\/[\w./-]+)?/g, "驗證資料")
+        .replace(/(?<![\w.])\.py\b\s*/g, "")
+        .replace(
+          /(?:src|tests|modules|services|enums|tasks|lib)\/[\w./-]+/g,
+          "產線模組",
+        )
+        .replace(/mini_api|mini_merchant/g, "產線")
+        .replace(/(產線(?:模組)?)(?:[ 　]+\1)+/g, "$1");
+    })
+    .join("\n");
+
 const transform = (modPath, source) => {
   const exportedNames = [];
   let hasDefault = false;
@@ -159,7 +182,7 @@ let out = `// GENERATED FILE — do not edit by hand. Rebuilt by tools/build-eng
 `;
 
 for (const modPath of MODULES) {
-  const source = readFileSync(join(SRC, modPath), "utf8");
+  const source = scrubComments(readFileSync(join(SRC, modPath), "utf8"));
   out += transform(modPath, source) + "\n";
 }
 

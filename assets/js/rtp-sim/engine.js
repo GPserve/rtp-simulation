@@ -32,7 +32,7 @@
 
 __define("decimal-utils.js", function () {
 /**
- * mini_api 全程使用 Python Decimal（預設 28 位有效數字、quantize 預設
+ * 產線 全程使用 Python Decimal（預設 28 位有效數字、quantize 預設
  * ROUND_HALF_EVEN）。瀏覽器端模擬工具改用 IEEE754 double + 手動 half-even
  * 捨入逼近 Decimal.quantize 行為——本引擎為「RTP 決策參考」模擬預覽工具，非
  * 實際結算帳本，浮點精度已遠超過模擬統計雜訊，不影響業務判讀。
@@ -61,10 +61,10 @@ return { roundHalfEven: roundHalfEven, round2: round2 };
 
 __define("card.js", function () {
 /**
- * 卡牌整數編碼（逐位元組移植自 mini_api enums/card.py）。
+ * 卡牌整數編碼（逐位元組移植自 產線模組）。
  *
  * 編碼公式：card = (花色碼 + CARD_SUIT_HEX_OFFSET) × CARD_ENCODING_BASE + 點數碼
- * 唯讀取材來源：mini_api/src/enums/card.py
+ * 唯讀取材來源：產線模組
  */
 
 const CARD_SUIT_HEX_OFFSET = 10;
@@ -99,10 +99,10 @@ return { CARD_SUIT_HEX_OFFSET: CARD_SUIT_HEX_OFFSET, CARD_ENCODING_BASE: CARD_EN
 
 __define("blackjack-rtp-scale-table.js", function () {
 /**
- * mini_api modules/client/blackjack_rtp_scale_table.py 逐鍵值原樣複製（唯讀取材、
+ * 產線模組 逐鍵值原樣複製（唯讀取材、
  * 不重新推導）。RTP（2 位小數字串）→ scale（Number，逼近原始 20 位小數精度，見
  * paytables/blackjack.js 模組註解「精度」段）。機器產生檔，不應手動編輯；如需
- * 更新請重新執行 mini_api 產表腳本並整份覆蓋本檔內容。
+ * 更新請重新執行 產線 產表腳本並整份覆蓋本檔內容。
  */
 const __default__ = {
   52.29: 0.00017981996473036152,
@@ -4800,10 +4800,10 @@ return { "default": __default__ };
 
 __define("seed.js", function () {
 /**
- * mini_api services/seed_service.py 逐位元組移植（唯讀取材，禁止修改來源檔案）。
+ * 產線模組 逐位元組移植（唯讀取材，禁止修改來源檔案）。
  *
  * 每個 generate_*_result 函式與 Python 版本演算法步驟一一對應（見各函式註解引用
- * 的原始行號），純函式、同輸入永遠同輸出。正確性由 __fixtures__ 黃金比對測試驗證。
+ * 的原始行號），純函式、同輸入永遠同輸出。正確性由 驗證資料 黃金比對測試驗證。
  *
  * BigInt 用於還原 Python 任意精度整數運算（>>3、%47 等位元操作在 JS Number
  * 53-bit 安全整數範圍內會失真，故 hex→整數換算一律走 BigInt）。
@@ -4898,8 +4898,8 @@ const generateMinesResult = (
 
 /**
  * generate_limbo_result 移植：回傳 2 位小數 Number（crash_point）。
- * houseEdge 為百分比整數（預設 1，對齊 mini_api 呼叫端從未帶入其他值，見
- * game_limbo.py limbo_bet：generate_limbo_result 呼叫未傳 house_edge，恆用預設）。
+ * houseEdge 為百分比整數（預設 1，對齊 產線 呼叫端從未帶入其他值，見
+ * 產線模組 limbo_bet：generate_limbo_result 呼叫未傳 house_edge，恆用預設）。
  */
 const generateLimboResult = (
   serverSeed,
@@ -5018,7 +5018,7 @@ const blackjackCardAtIndex = (serverSeed, clientSeed, nonce, i) => {
 };
 
 /**
- * generate_blackjack_result 移植：回傳長度 52 的牌流（enums/card 編碼值）。
+ * generate_blackjack_result 移植：回傳長度 52 的牌流（產線模組 編碼值）。
  * 供黃金比對測試與需要完整牌流的呼叫端使用。
  */
 const generateBlackjackResult = (serverSeed, clientSeed, nonce) => {
@@ -5063,7 +5063,7 @@ const generateWheelResult = (serverSeed, clientSeed, nonce) => {
 const BACCARAT_CARD_POOL = buildCardPool();
 
 /**
- * generate_baccarat_result 移植：回傳長度 6 的牌流（enums/card 編碼值）。
+ * generate_baccarat_result 移植：回傳長度 6 的牌流（產線模組 編碼值）。
  */
 const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
   const cards = [];
@@ -5081,7 +5081,7 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * generate_slot_result 移植（`services/seed_service.py:584-620`，HMAC-SHA256 byte 流）。
+ * generate_slot_result 移植（`產線模組:584-620`，HMAC-SHA256 byte 流）。
  *
  * 演算法（與 Python 逐位元組對應）：
  *   ① byte 流：HMAC-SHA256(key=serverSeed, msg=`${clientSeed}:${nonce}:${cursor}`)，
@@ -5092,7 +5092,12 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
  * @param {number[]} reelSizes 各軸環帶長度；長度＝軸數
  * @returns {number[]} 各軸停止位置（環帶索引）
  */
-const generateSlotResult = (serverSeed, clientSeed, nonce, reelSizes) => {
+const generateSlotResult = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  reelSizes,
+) => {
   let cursor = 0;
   let byteBuffer = [];
   let byteIdx = 0;
@@ -5128,7 +5133,7 @@ return { createNums: createNums, generateDiceResult: generateDiceResult, generat
 
 __define("paytables/dice.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/game_dice.py::computed_win_amount。
+ * 逐位元組移植自 產線模組。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5173,7 +5178,7 @@ return { computedWinAmount: computedWinAmount };
 
 __define("paytables/flip.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/game_flip.py::_multiplier_for_streak。
+ * 逐位元組移植自 產線模組。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5195,9 +5200,9 @@ return { FLIP_STREAK_CAP: FLIP_STREAK_CAP, multiplierForStreak: multiplierForStr
 
 __define("paytables/limbo.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/game_limbo.py::computed_win_amount。
+ * 逐位元組移植自 產線模組。
  *
- * 🔴 重要對照發現（見實作回報「未決疑問」）：mini_api 生產環境呼叫
+ * 🔴 重要對照發現（見實作回報「未決疑問」）：產線 生產環境呼叫
  * generate_limbo_result 時從未帶入 house_edge 參數（恆用預設值 1），
  * computed_win_amount 本身也不吃 effective_rtp——意即 LIMBO 目前後端實際遊戲
  * 結果與商戶／玩家設定的「RTP」欄位無關，crash_point 分布恆為 house_edge=1
@@ -5234,7 +5239,7 @@ return { TARGET_MIN: TARGET_MIN, TARGET_MAX: TARGET_MAX, computedWinAmount: comp
 
 __define("paytables/mines.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/game_mines.py::multipler_by_gems。
+ * 逐位元組移植自 產線模組。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5266,8 +5271,8 @@ return { multiplerByGems: multiplerByGems };
 
 __define("paytables/keno.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/keno_paytable.py（PAYTABLE 表體數字
- * 唯一真相，不進 DB，禁止自行調整）+ game_keno.py 的 BASE_RTP／k 縮放。
+ * 逐位元組移植自 產線模組（PAYTABLE 表體數字
+ * 唯一真相，不進 DB，禁止自行調整）+ 產線模組 的 BASE_RTP／k 縮放。
  */
 const DIFFICULTIES = ["Classic", "Low", "Medium", "High"];
 
@@ -5398,7 +5403,7 @@ return { DIFFICULTIES: DIFFICULTIES, BASE_RTP: BASE_RTP, PAYTABLE: PAYTABLE, get
 
 __define("paytables/chicken.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/chicken_paytable.py。
+ * 逐位元組移植自 產線模組。
  * 共用於 CHICKEN（total_cells=20）／BAO（20）／PENGUIN（22）三款變體。
  */
 const { round2 } = __require("decimal-utils.js");
@@ -5442,7 +5447,7 @@ return { CHICKEN_DIFFICULTY_BONES: CHICKEN_DIFFICULTY_BONES, chickenMultiplier: 
 
 __define("paytables/plinko.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/plinko_paytable.py + game_plinko.py 的
+ * 逐位元組移植自 產線模組 + 產線模組 的
  * BASE_RTP／k 縮放。
  */
 const RISKS = ["Low", "Medium", "High"];
@@ -5518,7 +5523,7 @@ return { RISKS: RISKS, BASE_RTP: BASE_RTP, PAYOUTS: PAYOUTS, getBaseMultiplier: 
 
 __define("paytables/wheel.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/wheel_paytable.py + game_wheel.py 的
+ * 逐位元組移植自 產線模組 + 產線模組 的
  * BASE_RTP／k 縮放。
  */
 const RISKS = ["Low", "Medium", "High"];
@@ -5603,18 +5608,18 @@ return { RISKS: RISKS, VALID_SEGMENTS: VALID_SEGMENTS, BASE_RTP: BASE_RTP, PAYOU
 
 __define("paytables/baccarat.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/baccarat_probability.py +
- * baccarat_paytable.py + baccarat_rules.py + baccarat_engine.py。
+ * 逐位元組移植自 產線模組 +
+ * 產線模組 + 產線模組 + 產線模組。
  *
  * 機率常數（P_PLAYER_WIN / P_BANKER_WIN / P_TIE）為窮舉精確分數，直接取
- * mini_api 實際跑出的分子/分母（見 __fixtures__/baccarat_constants.json）硬編碼，
- * 不在瀏覽器端重新窮舉（避免二次實作漂移風險，單一真相來源＝mini_api 常數本身）。
+ * 產線 實際跑出的分子/分母（見 驗證資料）硬編碼，
+ * 不在瀏覽器端重新窮舉（避免二次實作漂移風險，單一真相來源＝產線 常數本身）。
  * 分母 4826809 遠低於 JS 安全整數上限，double 除法精度足以支撐本模擬工具需求。
  */
 const { round2 } = __require("decimal-utils.js");
 const { decodeCardRank } = __require("card.js");
 
-// 精確分數（來源：mini_api baccarat_probability.compute_outcome_probabilities()）
+// 精確分數（來源：產線 baccarat_probability.compute_outcome_probabilities()）
 const P_PLAYER_WIN = 2153464 / 4826809;
 const P_BANKER_WIN = 2212744 / 4826809;
 const P_TIE = 460601 / 4826809;
@@ -5685,7 +5690,7 @@ const baccaratRtpAchievable = (effectiveRtp) => {
   });
 };
 
-// ---------------- baccarat_rules.py ----------------
+// ---------------- 產線模組 ----------------
 
 /** 百家樂點值：A=1、2~9 面值、10/J/Q/K=0。 */
 const pointValue = (card) => {
@@ -5713,11 +5718,11 @@ const bankerDrawsThird = (bankerTotal, playerThirdPoint) => {
   return false; // bankerTotal === 7，停牌
 };
 
-// ---------------- baccarat_engine.py ----------------
+// ---------------- 產線模組 ----------------
 
 /**
  * 依 6 張生成牌（index 0~5）解析出實際發出的牌與雙方點數。
- * cards: 長度 6 的 array（enums/card 代號）。
+ * cards: 長度 6 的 array（產線模組 代號）。
  */
 const resolveHand = (cards) => {
   const playerInitial = cards.slice(0, 2);
@@ -5831,7 +5836,7 @@ return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BACCARAT_MIN_EFFECTIVE_RTP: BACCARA
 
 __define("paytables/blackjack-engine.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/blackjack_engine.py（純函式、
+ * 逐位元組移植自 產線模組（純函式、
  * 無 DB/session 副作用）。
  */
 const { decodeCardRank } = __require("card.js");
@@ -6017,10 +6022,10 @@ return { cardRank: cardRank, handValue: handValue, isNaturalBlackjack: isNatural
 
 __define("paytables/blackjack.js", function () {
 /**
- * 逐位元組移植自 mini_api modules/client/blackjack_paytable.py。
+ * 逐位元組移植自 產線模組。
  *
  * BLACKJACK_RTP_SCALE_TABLE 為靜態反解對照表（開發階段一次性反解產出，非執行期
- * DP 運算），直接自 mini_api 原始 .py 常數轉存為 JS 物件（見
+ * DP 運算），直接自 產線 原始 常數轉存為 JS 物件（見
  * blackjack-rtp-scale-table.js 產生方式：唯讀取材、逐鍵值原樣複製，不重新推導）。
  */
 const RAW_SCALE_TABLE = __require("blackjack-rtp-scale-table.js").default;
@@ -6084,9 +6089,9 @@ return { BLACKJACK_GAME_CODE: BLACKJACK_GAME_CODE, BLACKJACK_NATIVE_RTP: BLACKJA
 
 __define("paytables/slot.js", function () {
 /**
- * 老虎機（slot）家族賠付資料：逐值移植自 mini_api
- * `modules/client/game/slot/fruit_king/fruit_king_config.py` 與
- * `modules/client/game/slot/bunny_gold/bunny_gold_config.py`。
+ * 老虎機（slot）家族賠付資料：逐值移植自 產線
+ * `產線模組` 與
+ * `產線模組`。
  *
  * 🔴 表體數字與環帶排列是**唯一真相、禁止自行調整**——同 keno/dice 等既有款慣例。
  * 環帶由產線 `build_reel_strip()` 決定性展開後導出，非手抄。
@@ -6126,65 +6131,678 @@ const PAYLINES = [
 // FRUIT_KING（水果大亨）
 // ─────────────────────────────────────────────────────────
 
-const FRUIT_KING_NATIVE_RTP = 97.8302;
+const FRUIT_KING_NATIVE_RTP = 97.83;
 
 const FRUIT_KING_PAYTABLE = {
-  H01: { 3: 0.50, 4: 2.50, 5: 6.25 },
-  H02: { 3: 0.50, 4: 3.75, 5: 12.50 },
-  H03: { 3: 0.75, 4: 5.00, 5: 20.00 },
-  H04: { 2: 0.10, 3: 1.25, 4: 5.00, 5: 37.50 },
-  L01: { 2: 0.10, 3: 0.25, 4: 1.25, 5: 5.00 },
-  L02: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L03: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L04: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L05: { 3: 0.25, 4: 2.50, 5: 5.00 },
-  SCATTER: { 2: 2.00, 3: 6.00, 4: 50.00, 5: 500.00 },
-  WILD: { 2: 0.50, 3: 10.00, 4: 100.00, 5: 500.00 },
+  H01: { 3: 0.5, 4: 2.5, 5: 6.25 },
+  H02: { 3: 0.5, 4: 3.75, 5: 12.5 },
+  H03: { 3: 0.75, 4: 5.0, 5: 20.0 },
+  H04: { 2: 0.1, 3: 1.25, 4: 5.0, 5: 37.5 },
+  L01: { 2: 0.1, 3: 0.25, 4: 1.25, 5: 5.0 },
+  L02: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L03: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L04: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L05: { 3: 0.25, 4: 2.5, 5: 5.0 },
+  SCATTER: { 2: 2.0, 3: 6.0, 4: 50.0, 5: 500.0 },
+  WILD: { 2: 0.5, 3: 10.0, 4: 100.0, 5: 500.0 },
 };
 
 const FRUIT_KING_STRIPS = [
   // 軸 1（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 2（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 3（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 4（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 5（43 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L05", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L05",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+    "L01",
+  ],
 ];
 
 // ─────────────────────────────────────────────────────────
 // BUNNY_GOLD（月兔搗金）
 // ─────────────────────────────────────────────────────────
 
-const BUNNY_GOLD_NATIVE_RTP = 97.8528;
+const BUNNY_GOLD_NATIVE_RTP = 97.85;
 
 const BUNNY_GOLD_PAYTABLE = {
-  H01: { 3: 0.50, 4: 2.50, 5: 6.25 },
-  H02: { 3: 0.50, 4: 3.75, 5: 12.50 },
-  H03: { 3: 0.75, 4: 5.00, 5: 20.00 },
-  H04: { 2: 0.10, 3: 1.25, 4: 5.00, 5: 37.50 },
-  L01: { 2: 0.10, 3: 0.25, 4: 1.25, 5: 5.00 },
-  L02: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L03: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L04: { 3: 0.25, 4: 1.25, 5: 5.00 },
-  L05: { 3: 0.25, 4: 2.50, 5: 5.00 },
-  SCATTER: { 2: 2.00, 3: 6.00, 4: 50.00, 5: 300.00 },
+  H01: { 3: 0.5, 4: 2.5, 5: 6.25 },
+  H02: { 3: 0.5, 4: 3.75, 5: 12.5 },
+  H03: { 3: 0.75, 4: 5.0, 5: 20.0 },
+  H04: { 2: 0.1, 3: 1.25, 4: 5.0, 5: 37.5 },
+  L01: { 2: 0.1, 3: 0.25, 4: 1.25, 5: 5.0 },
+  L02: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L03: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L04: { 3: 0.25, 4: 1.25, 5: 5.0 },
+  L05: { 3: 0.25, 4: 2.5, 5: 5.0 },
+  SCATTER: { 2: 2.0, 3: 6.0, 4: 50.0, 5: 300.0 },
 };
 
 const BUNNY_GOLD_STRIPS = [
   // 軸 1（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 2（30 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+  ],
   // 軸 3（60 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x2", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "SCATTER", "L01", "L02", "L01", "L01", "L01", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD_x2",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "SCATTER",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+  ],
   // 軸 4（120 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x3", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "SCATTER", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "SCATTER", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L01", "L01", "L01", "SCATTER", "L01", "L01", "L01", "L01", "L01", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD_x3",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "SCATTER",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "SCATTER",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "SCATTER",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "SCATTER",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+  ],
   // 軸 5（200 格）
-  ["L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "WILD_x5", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "SCATTER", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H03", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "SCATTER", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "H01", "H02", "H04", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L05", "L01", "L02", "SCATTER", "L03", "L04", "L05", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "L01", "L02", "L03", "L04", "SCATTER", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L03", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "L02", "L01", "SCATTER", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01", "L01"],
+  [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "WILD_x5",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "SCATTER",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "SCATTER",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "H01",
+    "H02",
+    "H04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L01",
+    "L02",
+    "SCATTER",
+    "L03",
+    "L04",
+    "L05",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "SCATTER",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L03",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "L02",
+    "L01",
+    "SCATTER",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+    "L01",
+  ],
 ];
 
 /** BUNNY_GOLD 各 WILD 代號帶的加成值（`WILD` 為 0 ＝ 純替代）。 */
@@ -6353,7 +6971,7 @@ __define("games/limbo.js", function () {
 /**
  * LIMBO 單筆模擬（A 類）。
  *
- * 🔴 見 paytables/limbo.js 模組註解：mini_api 產線 LIMBO 實際遊戲結果與商戶／
+ * 🔴 見 paytables/limbo.js 模組註解：產線 LIMBO 實際遊戲結果與商戶／
  * 玩家「RTP」設定無關（house_edge 恆用預設 1）。本模擬引擎按「與產線邏輯完全
  * 一致」原樣移植此行為——即 LIMBO 模擬結果的「實際 RTP」不會隨 RTP 設定輸入
  * 變動（恆收斂於 ~99%），此為已知現況、非本引擎缺陷（詳見實作回報未決疑問）。
@@ -6633,9 +7251,9 @@ __define("games/blackjack.js", function () {
 /**
  * BLACKJACK 單筆模擬（C 類，決策品質依賴，不提供策略參數）。
  *
- * 🔴 建模範圍界定（見實作回報說明）：mini_api 本身無「AI 玩家」概念（僅接收真人
+ * 🔴 建模範圍界定（見實作回報說明）：產線 本身無「AI 玩家」概念（僅接收真人
  * socket 決策），故「一般玩家模擬策略」本質是本引擎新建的模擬輸入假設、非從
- * mini_api 移植而來——mini_api 端唯一必須逐位元組一致的是 RNG（generateBlackjackResult）
+ * 產線 移植而來——產線 端唯一必須逐位元組一致的是 RNG（generateBlackjackResult）
  * 與賠付／RTP 縮放公式（blackjack.js 全數逐位元組移植），這兩者本模組完整複用。
  *
  * 「理論完美策略值」不需模擬：BLACKJACK_RTP_SCALE_TABLE 的建構定義本身就是
@@ -6787,7 +7405,7 @@ __define("games/slot.js", function () {
 /**
  * 老虎機（slot）家族單筆模擬（A 類）：FRUIT_KING／BUNNY_GOLD 共用。
  *
- * 逐段移植自 mini_api `modules/client/game/slot/core/slot_engine.py`
+ * 逐段移植自 產線 `產線模組`
  * （`_line_candidates` / `_match_count` / `_evaluate_line` / `evaluate_spin` /
  * `run_round`），與 `slot_socket_flow` 的整局彙總。
  *
@@ -6896,7 +7514,8 @@ const playSpin = (cfg, stops) => {
   let lineTotal = 0;
   for (const payline of PAYLINES) {
     const cells = [];
-    for (let reel = 0; reel < REELS_COUNT; reel += 1) cells.push(board[payline[reel]][reel]);
+    for (let reel = 0; reel < REELS_COUNT; reel += 1)
+      cells.push(board[payline[reel]][reel]);
     const best = evaluateLine(cfg, cells);
     if (best !== null) lineTotal += best;
   }
@@ -6922,7 +7541,10 @@ const simulateOneUnit = (
   const { trigger, award, cap } = cfg.freeSpin;
 
   let spinNonce = nonce;
-  const base = playSpin(cfg, generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes));
+  const base = playSpin(
+    cfg,
+    generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes),
+  );
   let totalMultiplier = base.multiplier;
 
   if (base.scatterCount >= trigger) {
@@ -6930,10 +7552,14 @@ const simulateOneUnit = (
     let played = 0;
     while (played < granted) {
       spinNonce += 1;
-      const free = playSpin(cfg, generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes));
+      const free = playSpin(
+        cfg,
+        generateSlotResult(serverSeed, clientSeed, spinNonce, reelSizes),
+      );
       totalMultiplier += free.multiplier;
       played += 1;
-      if (free.scatterCount >= trigger) granted = Math.min(granted + award, cap);
+      if (free.scatterCount >= trigger)
+        granted = Math.min(granted + award, cap);
     }
   }
 
@@ -6980,7 +7606,10 @@ const chickenFamilyEntry = (gameCode) => ({
 const slotEntry = (gameCode) => ({
   classification: "A",
   simulateOneUnit: (serverSeed, clientSeed, nonce, params) =>
-    slot.simulateOneUnit(serverSeed, clientSeed, nonce, { ...params, gameCode }),
+    slot.simulateOneUnit(serverSeed, clientSeed, nonce, {
+      ...params,
+      gameCode,
+    }),
   defaultParams: slot.DEFAULT_PARAMS,
 });
 
@@ -7044,11 +7673,11 @@ return { GAME_REGISTRY: GAME_REGISTRY, GAME_CODES: GAME_CODES };
 
 __define("rtp-bounds.js", function () {
 /**
- * RTP 輸入合法範圍／可達性校驗（逐遊戲對照 mini_api 既有校驗邏輯移植，
- * 見 modules/merchant/game.py::upsert_game + services/player_game_setting_service.py
+ * RTP 輸入合法範圍／可達性校驗（逐遊戲對照 產線 既有校驗邏輯移植，
+ * 見 產線模組 + 產線模組
  * ::batch_upsert_player_game_settings）。
  *
- * 通用下界：[0.01, 99.99]（marshmallow validate.Range，見 modules/merchant/game.py
+ * 通用下界：[0.01, 99.99]（marshmallow validate.Range，見 產線模組
  * upsert_game 的 rtp 參數校驗）——BLACKJACK／BACCARAT 之外全部遊戲僅有此通用範圍
  * 校驗，後端無逐遊戲專屬下界表；依 Brief 明文允許，以此為底線（詳見實作回報，
  * 列出哪些遊戲使用通用底線）。
