@@ -5128,7 +5128,56 @@ const generateSlotResult = (
   return stops;
 };
 
-return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult };
+/**
+ * generate_slot_result_with_reveal 移植（`產線模組`，HMAC-SHA256 byte 流）。
+ *
+ * 與 generateSlotResult 的唯一差異：停止位置取完後，**同一條 byte 流**再取一次
+ * 4 bytes 換出神秘符號揭曉索引 revealIndex = floor(f × revealSymbolCount)。
+ * revealSymbolCount 為 0 時不多耗任何 byte、revealIndex 為 null。
+ *
+ * @param {number[]} reelSizes 各軸環帶長度；長度＝軸數
+ * @param {number} revealSymbolCount 揭曉候選符號數
+ * @returns {{ stops: number[], revealIndex: number|null }}
+ */
+const generateSlotResultWithReveal = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  reelSizes,
+  revealSymbolCount,
+) => {
+  let cursor = 0;
+  let byteBuffer = [];
+  let byteIdx = 0;
+  const nextByte = () => {
+    if (byteIdx >= byteBuffer.length) {
+      const msg = `${clientSeed}:${nonce}:${cursor}`;
+      const hex = hmacSha256Hex(serverSeed, msg);
+      byteBuffer = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        byteBuffer.push(parseInt(hex.slice(i, i + 2), 16));
+      }
+      byteIdx = 0;
+      cursor += 1;
+    }
+    const b = byteBuffer[byteIdx];
+    byteIdx += 1;
+    return b;
+  };
+  const nextFloat = () => {
+    let f = 0.0;
+    for (let i = 0; i < 4; i += 1) {
+      f += nextByte() / Math.pow(256, i + 1);
+    }
+    return f;
+  };
+
+  const stops = reelSizes.map((reelSize) => Math.floor(nextFloat() * reelSize));
+  if (revealSymbolCount <= 0) return { stops, revealIndex: null };
+  return { stops, revealIndex: Math.floor(nextFloat() * revealSymbolCount) };
+};
+
+return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult, generateSlotResultWithReveal: generateSlotResultWithReveal };
 });
 
 __define("paytables/dice.js", function () {
@@ -6834,6 +6883,348 @@ const SCATTER_PAYS_ON_TOTAL = true;
 return { PAYLINES: PAYLINES, FRUIT_KING_NATIVE_RTP: FRUIT_KING_NATIVE_RTP, FRUIT_KING_PAYTABLE: FRUIT_KING_PAYTABLE, FRUIT_KING_STRIPS: FRUIT_KING_STRIPS, BUNNY_GOLD_NATIVE_RTP: BUNNY_GOLD_NATIVE_RTP, BUNNY_GOLD_PAYTABLE: BUNNY_GOLD_PAYTABLE, BUNNY_GOLD_STRIPS: BUNNY_GOLD_STRIPS, BUNNY_GOLD_WILD_BONUS: BUNNY_GOLD_WILD_BONUS, REELS_COUNT: REELS_COUNT, ROWS_COUNT: ROWS_COUNT, SCATTER: SCATTER, FREE_SPIN: FREE_SPIN, LINE_PAY_ON_TOTAL: LINE_PAY_ON_TOTAL, SCATTER_PAYS_ON_TOTAL: SCATTER_PAYS_ON_TOTAL };
 });
 
+__define("paytables/aurora-bear.js", function () {
+/**
+ * AURORA_BEAR（極光熊）賠付資料：逐值移植自 產線
+ * `產線模組`。
+ *
+ * 🔴 表體數字與環帶排列是**唯一真相、禁止自行調整**——同既有各款慣例。
+ * 環帶與賠付線由產線隨碼帶入的定稿資料檔以腳本導出，非手抄。
+ *
+ * 與前兩款的結構差異（非筆誤）：
+ *   - 不等高盤面 3-4-4-4-3、15 條賠付線、4 連起賠。
+ *   - WILD / SCATTER / MYSTERY 皆不在賠付表內（WILD 只替代、SCATTER 只觸發、
+ *     MYSTERY 判線前已全部揭曉成一般符號）。
+ *   - 基礎轉與免費轉用同一份環帶。
+ */
+
+/** 各軸行數：首尾兩軸 3 行、中間三軸 4 行。 */
+const AURORA_BEAR_ROWS_BY_REEL = [3, 4, 4, 4, 3];
+
+/** 15 條固定賠付線（值＝該軸取第幾列，0＝最上）。 */
+const AURORA_BEAR_PAYLINES = [
+  [1, 2, 1, 0, 0],
+  [0, 0, 0, 1, 1],
+  [2, 1, 2, 2, 2],
+  [2, 3, 3, 3, 2],
+  [0, 0, 0, 0, 0],
+  [1, 1, 1, 1, 1],
+  [2, 3, 2, 2, 1],
+  [1, 2, 3, 3, 2],
+  [0, 0, 0, 1, 0],
+  [0, 1, 1, 0, 0],
+  [1, 2, 2, 2, 1],
+  [2, 3, 3, 2, 2],
+  [0, 1, 2, 3, 2],
+  [1, 0, 0, 0, 0],
+  [2, 2, 1, 1, 1],
+];
+
+const AURORA_BEAR_NATIVE_RTP = 96.66;
+
+/** 賠付表（整轉總注倍數）；宣告順序即決勝順序。 */
+const AURORA_BEAR_PAYTABLE = {
+  L01: { 4: 1.3, 5: 2.8 },
+  L02: { 4: 1.3, 5: 2.8 },
+  L03: { 4: 1.3, 5: 2.8 },
+  L04: { 4: 1.3, 5: 2.8 },
+  L05: { 4: 1.3, 5: 2.8 },
+  L06: { 4: 1.3, 5: 3.3 },
+  H01: { 4: 2.2, 5: 4.4 },
+  H02: { 4: 2.2, 5: 5.0 },
+  H03: { 4: 2.8, 5: 5.5 },
+};
+
+/** 神秘符號揭曉對照：索引 0~8 對應的一般符號（順序不可重排）。 */
+const AURORA_BEAR_REVEAL_ORDER = [
+  "L01",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "L06",
+  "H01",
+  "H02",
+  "H03",
+];
+
+/** 首尾兩軸共用環帶（118 格）。 */
+const EDGE_STRIP = [
+  "SCATTER",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "MYSTERY",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "MYSTERY",
+  "L06",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "MYSTERY",
+  "L05",
+  "L06",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "MYSTERY",
+  "L03",
+  "L04",
+  "L05",
+  "L06",
+  "SCATTER",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "MYSTERY",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "MYSTERY",
+  "L06",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "MYSTERY",
+  "L05",
+  "L06",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "MYSTERY",
+  "L03",
+  "L04",
+  "L05",
+  "L06",
+];
+
+/** 中間三軸共用環帶（126 格）。 */
+const MIDDLE_STRIP = [
+  "SCATTER",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "MYSTERY",
+  "L01",
+  "L02",
+  "L03",
+  "L04",
+  "MYSTERY",
+  "L05",
+  "L06",
+  "SCATTER",
+  "WILD",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "SCATTER",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "MYSTERY",
+  "L06",
+  "SCATTER",
+  "WILD",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "L01",
+  "L02",
+  "MYSTERY",
+  "L03",
+  "L04",
+  "L05",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "MYSTERY",
+  "L01",
+  "L02",
+  "L03",
+  "L04",
+  "MYSTERY",
+  "L05",
+  "L06",
+  "SCATTER",
+  "WILD",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "MYSTERY",
+  "L06",
+  "H01",
+  "H02",
+  "MYSTERY",
+  "H03",
+  "L01",
+  "L02",
+  "L03",
+  "MYSTERY",
+  "L04",
+  "L05",
+  "L06",
+  "MYSTERY",
+  "H01",
+  "H02",
+  "H03",
+  "L01",
+  "MYSTERY",
+  "L02",
+  "L03",
+  "L04",
+  "L05",
+  "MYSTERY",
+  "L06",
+  "SCATTER",
+  "WILD",
+  "H01",
+  "MYSTERY",
+  "H02",
+  "H03",
+  "L01",
+  "L02",
+  "MYSTERY",
+  "L03",
+  "L04",
+  "L05",
+  "L06",
+];
+
+const AURORA_BEAR_STRIPS = [
+  EDGE_STRIP,
+  MIDDLE_STRIP,
+  MIDDLE_STRIP,
+  MIDDLE_STRIP,
+  EDGE_STRIP,
+];
+
+/** combo 上界（含）→ 倍率；0 ＝ 無加成。分段查表、不是連續階梯。 */
+const AURORA_BEAR_TIER_TABLE = [
+  [3, 0],
+  [6, 1.5],
+  [8, 2],
+  [9, 2.5],
+  [10, 3],
+];
+
+const AURORA_BEAR_COMBO_CAP = 10;
+
+/** 免費旋轉：3 個 SCATTER 觸發、每次給 10 轉、單局總轉數封在 30。 */
+const AURORA_BEAR_FREE_SPIN = { trigger: 3, award: 10, cap: 30 };
+
+return { AURORA_BEAR_ROWS_BY_REEL: AURORA_BEAR_ROWS_BY_REEL, AURORA_BEAR_PAYLINES: AURORA_BEAR_PAYLINES, AURORA_BEAR_NATIVE_RTP: AURORA_BEAR_NATIVE_RTP, AURORA_BEAR_PAYTABLE: AURORA_BEAR_PAYTABLE, AURORA_BEAR_REVEAL_ORDER: AURORA_BEAR_REVEAL_ORDER, AURORA_BEAR_STRIPS: AURORA_BEAR_STRIPS, AURORA_BEAR_TIER_TABLE: AURORA_BEAR_TIER_TABLE, AURORA_BEAR_COMBO_CAP: AURORA_BEAR_COMBO_CAP, AURORA_BEAR_FREE_SPIN: AURORA_BEAR_FREE_SPIN };
+});
+
 __define("games/random-choice.js", function () {
 /**
  * 玩家行為假設抽樣（非遊戲結果 RNG）：依權重陣列抽出一個 index。
@@ -7572,6 +7963,205 @@ const simulateOneUnit = (
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, SLOT_CONFIGS: SLOT_CONFIGS, simulateOneUnit: simulateOneUnit };
 });
 
+__define("games/aurora-bear.js", function () {
+/**
+ * AURORA_BEAR（極光熊）單筆模擬（A 類）。
+ *
+ * 逐段移植自 產線 `產線模組`
+ * 的 `run_slot_round`（神秘符號翻牌 ＋ 免費轉黏著 combo WILD），判線本體對齊
+ * `產線模組` 在本款傳入的擴充參數（軸優先取格、候選來源、逐線判定）。
+ *
+ * 「一個模擬單位」＝一次觸發轉 ＋ 該次觸發的全部免費轉（免轉零投入，不計入分母）。
+ *
+ * 🔴 與前兩款不同、容易寫錯的地方：
+ *   (a) 候選只取該線**實際出現過**的一般符號（依賠付表順序）——整條線全是 WILD 不賠。
+ *   (b) 黏著倍率**不參與決勝**：先在原始賠付倍數上選出勝者，再乘該線倍率。
+ *   (c) 免費轉逐條賠付線依索引判定、**即時**更新 opened / combo：同一轉後面的線看得到
+ *       前面的線剛加上去的 combo。第一次被通過只點亮、combo 維持 0。
+ *   (d) 免轉盤面順序：取原始盤面 → 記下本轉原生 WILD → 蓋上舊黏著 → 揭曉剩下的
+ *       MYSTERY → 新 WILD 加入黏著（combo 0）→ 判定。黏著格底下的 SCATTER 不算數。
+ *   (e) 金額口徑對齊產線：每轉派彩各自四捨五入到兩位，整局為各轉相加。
+ */
+const { generateSlotResultWithReveal } = __require("seed.js");
+const { AURORA_BEAR_ROWS_BY_REEL, AURORA_BEAR_PAYLINES, AURORA_BEAR_NATIVE_RTP, AURORA_BEAR_PAYTABLE, AURORA_BEAR_REVEAL_ORDER, AURORA_BEAR_STRIPS, AURORA_BEAR_TIER_TABLE, AURORA_BEAR_COMBO_CAP, AURORA_BEAR_FREE_SPIN } = __require("paytables/aurora-bear.js");
+const { round2 } = __require("decimal-utils.js");
+
+const CLASSIFICATION = "A";
+
+const DEFAULT_PARAMS = {};
+
+const WILD = "WILD";
+const SCATTER = "SCATTER";
+const MYSTERY = "MYSTERY";
+
+const REEL_SIZES = AURORA_BEAR_STRIPS.map((strip) => strip.length);
+const CANDIDATE_ORDER = Object.keys(AURORA_BEAR_PAYTABLE);
+
+const tierMultiplier = (combo) => {
+  for (const [ceiling, multiplier] of AURORA_BEAR_TIER_TABLE) {
+    if (combo <= ceiling) return multiplier;
+  }
+  return AURORA_BEAR_TIER_TABLE[AURORA_BEAR_TIER_TABLE.length - 1][1];
+};
+
+const posKey = (reel, row) => reel * 10 + row;
+
+/** 依停軸位置組出軸優先盤面：board[reel][row]（不等高）。 */
+const buildBoard = (stops) =>
+  AURORA_BEAR_STRIPS.map((strip, reel) => {
+    const cells = [];
+    for (let row = 0; row < AURORA_BEAR_ROWS_BY_REEL[reel]; row += 1) {
+      cells.push(strip[(stops[reel] + row) % strip.length]);
+    }
+    return cells;
+  });
+
+/** 把盤面上所有 MYSTERY 同時揭曉為同一個一般符號（就地改寫）。 */
+const revealMystery = (board, symbol) => {
+  for (const cells of board) {
+    for (let row = 0; row < cells.length; row += 1) {
+      if (cells[row] === MYSTERY) cells[row] = symbol;
+    }
+  }
+};
+
+const wildPositions = (board) => {
+  const found = [];
+  board.forEach((cells, reel) =>
+    cells.forEach((symbol, row) => {
+      if (symbol === WILD) found.push(posKey(reel, row));
+    }),
+  );
+  return found;
+};
+
+const countScatter = (board) => {
+  let n = 0;
+  for (const cells of board) for (const s of cells) if (s === SCATTER) n += 1;
+  return n;
+};
+
+/** 單線判定：回傳 { multiplier, count } 或 null；(a)(b) 見檔頭。 */
+const evaluateLine = (cells) => {
+  const present = new Set(cells);
+  let best = null;
+  for (const candidate of CANDIDATE_ORDER) {
+    if (!present.has(candidate)) continue;
+    let count = 0;
+    for (const symbol of cells) {
+      if (symbol !== candidate && symbol !== WILD) break;
+      count += 1;
+    }
+    const multiplier = AURORA_BEAR_PAYTABLE[candidate][count];
+    if (multiplier === undefined) continue;
+    if (best !== null && multiplier <= best.multiplier) continue;
+    best = { multiplier, count };
+  }
+  return best;
+};
+
+/**
+ * 單轉的線賠總倍數（未乘注額與 k）。sticky 為 null 時不套黏著倍率；
+ * 否則依賠付線索引即時更新 opened / combo（(c) 見檔頭）。
+ */
+const spinLineMultiplier = (board, sticky) => {
+  let total = 0;
+  for (const payline of AURORA_BEAR_PAYLINES) {
+    const cells = payline.map((row, reel) => board[reel][row]);
+    const win = evaluateLine(cells);
+    if (win === null) continue;
+    let bonus = 0;
+    if (sticky !== null) {
+      for (let reel = 0; reel < win.count; reel += 1) {
+        const key = posKey(reel, payline[reel]);
+        if (!sticky.positions.has(key)) continue;
+        if (!sticky.opened.has(key)) {
+          sticky.opened.add(key);
+        } else {
+          sticky.combo.set(
+            key,
+            Math.min(sticky.combo.get(key) + 1, AURORA_BEAR_COMBO_CAP),
+          );
+        }
+        bonus = Math.max(bonus, tierMultiplier(sticky.combo.get(key)));
+      }
+    }
+    total += bonus === 0 ? win.multiplier : win.multiplier * bonus;
+  }
+  return total;
+};
+
+const drawSpin = (serverSeed, clientSeed, nonce) => {
+  const { stops, revealIndex } = generateSlotResultWithReveal(
+    serverSeed,
+    clientSeed,
+    nonce,
+    REEL_SIZES,
+    AURORA_BEAR_REVEAL_ORDER.length,
+  );
+  return {
+    board: buildBoard(stops),
+    revealSymbol: AURORA_BEAR_REVEAL_ORDER[revealIndex],
+  };
+};
+
+/**
+ * 一個模擬單位：觸發轉 ＋ 全部免費轉。第 i 次免費轉的 nonce ＝ 起始 nonce + 1 + i。
+ */
+const simulateOneUnit = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  { betAmount, rtp },
+) => {
+  const k = rtp / AURORA_BEAR_NATIVE_RTP;
+  // 賠付單位＝整轉總注；本款 SCATTER 不賠，每轉派彩只有線賠
+  const spinWin = (lineMultiplier) => round2(lineMultiplier * betAmount * k);
+  const { trigger, award, cap } = AURORA_BEAR_FREE_SPIN;
+
+  const base = drawSpin(serverSeed, clientSeed, nonce);
+  revealMystery(base.board, base.revealSymbol);
+  let win = spinWin(spinLineMultiplier(base.board, null));
+
+  if (countScatter(base.board) >= trigger) {
+    const positions = new Set(wildPositions(base.board));
+    const sticky = { positions, opened: new Set(), combo: new Map() };
+    positions.forEach((key) => sticky.combo.set(key, 0));
+
+    let awarded = award;
+    for (let index = 0; index < awarded; index += 1) {
+      const { board, revealSymbol } = drawSpin(
+        serverSeed,
+        clientSeed,
+        nonce + 1 + index,
+      );
+      const rawWild = wildPositions(board);
+      board.forEach((cells, reel) => {
+        for (let row = 0; row < cells.length; row += 1) {
+          if (positions.has(posKey(reel, row))) cells[row] = WILD;
+        }
+      });
+      revealMystery(board, revealSymbol);
+      rawWild.forEach((key) => {
+        if (!positions.has(key)) {
+          positions.add(key);
+          sticky.combo.set(key, 0);
+        }
+      });
+      win += spinWin(spinLineMultiplier(board, sticky));
+      if (countScatter(board) >= trigger && awarded < cap) {
+        awarded = Math.min(awarded + award, cap);
+      }
+    }
+  }
+
+  win = round2(win);
+  return { invested: betAmount, win, profit: round2(win - betAmount) };
+};
+
+return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
+});
+
 __define("registry.js", function () {
 /**
  * 遊戲模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
@@ -7591,6 +8181,7 @@ const baccarat = __require("games/baccarat.js");
 const flip = __require("games/flip.js");
 const blackjack = __require("games/blackjack.js");
 const slot = __require("games/slot.js");
+const auroraBear = __require("games/aurora-bear.js");
 const { TOTAL_CELLS_BY_GAME } = __require("games/chicken.js");
 
 const chickenFamilyEntry = (gameCode) => ({
@@ -7616,6 +8207,11 @@ const slotEntry = (gameCode) => ({
 const GAME_REGISTRY = {
   FRUIT_KING: slotEntry("FRUIT_KING"),
   BUNNY_GOLD: slotEntry("BUNNY_GOLD"),
+  AURORA_BEAR: {
+    classification: "A",
+    simulateOneUnit: auroraBear.simulateOneUnit,
+    defaultParams: auroraBear.DEFAULT_PARAMS,
+  },
   DICE: {
     classification: "A",
     simulateOneUnit: dice.simulateOneUnit,

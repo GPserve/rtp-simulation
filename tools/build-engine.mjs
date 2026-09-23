@@ -38,6 +38,7 @@ const MODULES = [
   "paytables/blackjack-engine.js",
   "paytables/blackjack.js",
   "paytables/slot.js",
+  "paytables/aurora-bear.js",
   "games/random-choice.js",
   "games/dice.js",
   "games/flip.js",
@@ -50,6 +51,7 @@ const MODULES = [
   "games/baccarat.js",
   "games/blackjack.js",
   "games/slot.js",
+  "games/aurora-bear.js",
   "registry.js",
   "rtp-bounds.js",
 ];
