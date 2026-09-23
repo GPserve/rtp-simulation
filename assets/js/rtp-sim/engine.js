@@ -5129,6 +5129,60 @@ const generateSlotResult = (
 };
 
 /**
+ * generate_frog_cross_result 移植（`產線模組`，Stake Dragon Tower 官方演算法）。
+ *
+ * 與 generateChickenResult 同一套 HMAC-SHA256 byte 流，只差映射：
+ *   逐排 pool = [0..padCount-1]，**每排只消耗 frogCount 個 float**：
+ *   idx = floor(f × pool.length)、pool 取出該格即一隻青蛙的位置；取滿後 pool 剩下的是枯葉。
+ *   九排共用同一條連續 byte 流（cursor 不重置）。
+ *
+ * @returns {number[][]} fullLayout：每排前 frogCount 個為青蛙位置（pick 順序）、其餘為枯葉，皆 0-based
+ */
+const generateFrogCrossResult = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  frogCount,
+  padCount,
+  rows = 9,
+) => {
+  let cursor = 0;
+  let byteBuffer = [];
+  let byteIdx = 0;
+  const nextByte = () => {
+    if (byteIdx >= byteBuffer.length) {
+      const msg = `${clientSeed}:${nonce}:${cursor}`;
+      const hex = hmacSha256Hex(serverSeed, msg);
+      byteBuffer = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        byteBuffer.push(parseInt(hex.slice(i, i + 2), 16));
+      }
+      byteIdx = 0;
+      cursor += 1;
+    }
+    const b = byteBuffer[byteIdx];
+    byteIdx += 1;
+    return b;
+  };
+
+  const fullLayout = [];
+  for (let row = 0; row < rows; row += 1) {
+    const pool = [];
+    for (let i = 0; i < padCount; i += 1) pool.push(i);
+    const picks = [];
+    for (let pick = 0; pick < frogCount; pick += 1) {
+      let f = 0.0;
+      for (let i = 0; i < 4; i += 1) {
+        f += nextByte() / Math.pow(256, i + 1);
+      }
+      picks.push(pool.splice(Math.floor(f * pool.length), 1)[0]);
+    }
+    fullLayout.push(picks.concat(pool));
+  }
+  return fullLayout;
+};
+
+/**
  * generate_slot_result_with_reveal 移植（`產線模組`，HMAC-SHA256 byte 流）。
  *
  * 與 generateSlotResult 的唯一差異：停止位置取完後，**同一條 byte 流**再取一次
@@ -5177,7 +5231,7 @@ const generateSlotResultWithReveal = (
   return { stops, revealIndex: Math.floor(nextFloat() * revealSymbolCount) };
 };
 
-return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult, generateSlotResultWithReveal: generateSlotResultWithReveal };
+return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult, generateFrogCrossResult: generateFrogCrossResult, generateSlotResultWithReveal: generateSlotResultWithReveal };
 });
 
 __define("paytables/dice.js", function () {
@@ -7225,6 +7279,42 @@ const AURORA_BEAR_FREE_SPIN = { trigger: 3, award: 10, cap: 30 };
 return { AURORA_BEAR_ROWS_BY_REEL: AURORA_BEAR_ROWS_BY_REEL, AURORA_BEAR_PAYLINES: AURORA_BEAR_PAYLINES, AURORA_BEAR_NATIVE_RTP: AURORA_BEAR_NATIVE_RTP, AURORA_BEAR_PAYTABLE: AURORA_BEAR_PAYTABLE, AURORA_BEAR_REVEAL_ORDER: AURORA_BEAR_REVEAL_ORDER, AURORA_BEAR_STRIPS: AURORA_BEAR_STRIPS, AURORA_BEAR_TIER_TABLE: AURORA_BEAR_TIER_TABLE, AURORA_BEAR_COMBO_CAP: AURORA_BEAR_COMBO_CAP, AURORA_BEAR_FREE_SPIN: AURORA_BEAR_FREE_SPIN };
 });
 
+__define("paytables/frog-cross.js", function () {
+/**
+ * FROG_CROSS（青蛙過河）賠率：逐值移植自 產線
+ * `產線模組`。
+ *
+ * 每排獨立的幾何級數（與 chicken / mines 的超幾何不同構）：
+ *   m(k) = (padCount / frogCount)^k × RTP / 100
+ * 跳到第 k 排的存活機率 (frogCount / padCount)^k，兩者相乘恆等於 RTP / 100。
+ */
+
+/** 排數固定 9、不隨難度變。 */
+const FROG_CROSS_ROWS = 9;
+
+/** 難度 → 每排青蛙數（安全格）與荷葉數（總格）。 */
+const FROG_CROSS_DIFFICULTY_MAP = {
+  Easy: { frogCount: 3, padCount: 4 },
+  Medium: { frogCount: 2, padCount: 3 },
+  Hard: { frogCount: 1, padCount: 2 },
+  Expert: { frogCount: 1, padCount: 3 },
+  Master: { frogCount: 1, padCount: 4 },
+};
+
+/**
+ * 跳過 passedRows 排之後的倍率精確值（不進位，金額計算用）。
+ *
+ * @param {number} rtp 百分數
+ * @returns {number}
+ */
+const frogCrossMultiplier = (frogCount, padCount, passedRows, rtp) => {
+  if (passedRows === 0) return 1;
+  return Math.pow(padCount / frogCount, passedRows) * (rtp / 100);
+};
+
+return { FROG_CROSS_ROWS: FROG_CROSS_ROWS, FROG_CROSS_DIFFICULTY_MAP: FROG_CROSS_DIFFICULTY_MAP, frogCrossMultiplier: frogCrossMultiplier };
+});
+
 __define("games/random-choice.js", function () {
 /**
  * 玩家行為假設抽樣（非遊戲結果 RNG）：依權重陣列抽出一個 index。
@@ -8162,6 +8252,54 @@ const simulateOneUnit = (
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
 });
 
+__define("games/frog-cross.js", function () {
+/**
+ * FROG_CROSS（青蛙過河）單筆模擬（A 類）。
+ * 遊戲專屬參數：難度（Easy/Medium/Hard/Expert/Master）、玩家平均跳過排數（收手點 1~9）。
+ *
+ * 每排青蛙位置由種子均勻產生、排與排獨立，故玩家每排選哪一片荷葉不影響分布；
+ * 本模擬固定每排跳第一片荷葉（0-based 位置 0），結果與任何固定或隨機選法同分布。
+ * 金額口徑對齊產線：win = 注額 × 精確倍率，四捨五入到兩位。
+ */
+const { generateFrogCrossResult } = __require("seed.js");
+const { FROG_CROSS_ROWS, FROG_CROSS_DIFFICULTY_MAP, frogCrossMultiplier } = __require("paytables/frog-cross.js");
+const { round2 } = __require("decimal-utils.js");
+
+const CLASSIFICATION = "A";
+
+const DEFAULT_PARAMS = { difficulty: "Medium", rowsToPass: 3 };
+
+const PICKED_PAD = 0;
+
+const simulateOneUnit = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  { difficulty, rowsToPass, betAmount, rtp },
+) => {
+  const { frogCount, padCount } = FROG_CROSS_DIFFICULTY_MAP[difficulty];
+  const layout = generateFrogCrossResult(
+    serverSeed,
+    clientSeed,
+    nonce,
+    frogCount,
+    padCount,
+    FROG_CROSS_ROWS,
+  );
+  for (let row = 0; row < rowsToPass; row += 1) {
+    const frogs = layout[row].slice(0, frogCount);
+    if (!frogs.includes(PICKED_PAD)) {
+      return { invested: betAmount, win: 0, profit: -betAmount };
+    }
+  }
+  const multiplier = frogCrossMultiplier(frogCount, padCount, rowsToPass, rtp);
+  const win = round2(betAmount * multiplier);
+  return { invested: betAmount, win, profit: round2(win - betAmount) };
+};
+
+return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
+});
+
 __define("registry.js", function () {
 /**
  * 遊戲模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
@@ -8182,6 +8320,7 @@ const flip = __require("games/flip.js");
 const blackjack = __require("games/blackjack.js");
 const slot = __require("games/slot.js");
 const auroraBear = __require("games/aurora-bear.js");
+const frogCross = __require("games/frog-cross.js");
 const { TOTAL_CELLS_BY_GAME } = __require("games/chicken.js");
 
 const chickenFamilyEntry = (gameCode) => ({
@@ -8235,6 +8374,11 @@ const GAME_REGISTRY = {
   CHICKEN: chickenFamilyEntry("CHICKEN"),
   BAO: chickenFamilyEntry("BAO"),
   PENGUIN: chickenFamilyEntry("PENGUIN"),
+  FROG_CROSS: {
+    classification: "A",
+    simulateOneUnit: frogCross.simulateOneUnit,
+    defaultParams: frogCross.DEFAULT_PARAMS,
+  },
   PLINKO: {
     classification: "A",
     simulateOneUnit: plinko.simulateOneUnit,
