@@ -26,7 +26,7 @@
     return x.toFixed(2) + "%";
   };
 
-  // Production bounds (marshmallow validate.Range on merchant game RTP);
+  // Production RTP bounds apply to the general validation range;
   // BLACKJACK / BACCARAT pages use the engine's dedicated bounds instead
   // (validateRtpField below picks that up automatically when core.js is
   // loaded on the page).

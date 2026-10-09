@@ -10,7 +10,7 @@
   var GAME_CODE = window.RTP_GAME.code;
   var TOTAL_CELLS = window.RTP_GAME.totalCells;
 
-  // Danger cells per difficulty (chicken_paytable.py CHICKEN_DIFFICULTY_BONES).
+  // Danger cells per difficulty; shared across the three board variants.
   var DIFFICULTY_BONES = { Easy: 1, Medium: 3, Hard: 5, Expert: 10 };
 
   var betInput = el("bet-amount");

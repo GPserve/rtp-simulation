@@ -1,10 +1,11 @@
-// Regenerates assets/js/rtp-sim/engine.js from the verified rtp-engine ES
-// modules (maintained in a separate private repository). The source modules
-// carry the golden-tested game logic and paytable data; this script only
-// rewrites module syntax (ESM → lazy global registry) and never edits
+// Regenerates assets/js/rtp-sim/engine.js from verified engine source
+// modules. They contain tested game logic and paytable data; this script
+// only rewrites module syntax (ESM → lazy global registry) and never edits
 // values. Rerun after updating the source modules:
 //
-//   node tools/build-engine.mjs <path-to-rtp-engine-dir>
+//   node tools/build-engine.mjs <source-dir> [out-path]
+//
+// The source directory must contain scrub-rules.json.
 //
 // hash.js is replaced with a shim over the vendored js-sha256 / js-sha512
 // globals (the source module imports the npm packages instead), and
@@ -16,10 +17,33 @@ import { fileURLToPath } from "node:url";
 
 const SRC = process.argv[2];
 if (!SRC) {
-  console.error("usage: node tools/build-engine.mjs <path-to-rtp-engine-dir>");
+  console.error("usage: node tools/build-engine.mjs <source-dir> [out-path]");
   process.exit(1);
 }
-const OUT = join(dirname(fileURLToPath(import.meta.url)), "../assets/js/rtp-sim/engine.js");
+const OUT = process.argv[3] || join(dirname(fileURLToPath(import.meta.url)), "../assets/js/rtp-sim/engine.js");
+
+let rules;
+try {
+  const data = JSON.parse(readFileSync(join(SRC, "scrub-rules.json"), "utf8"));
+  if (!Array.isArray(data.replace) || !data.replace.length || !Array.isArray(data.forbid) || !data.forbid.length) {
+    throw new Error("invalid rules");
+  }
+  rules = {
+    replace: data.replace.map((entry) => {
+      if (!Array.isArray(entry) || entry.length !== 3 || entry.some((part) => typeof part !== "string")) {
+        throw new Error("invalid replacement");
+      }
+      return [new RegExp(entry[0], entry[1]), entry[2]];
+    }),
+    forbid: data.forbid.map((entry) => {
+      if (typeof entry !== "string" || !entry) throw new Error("invalid prohibition");
+      return new RegExp(entry, "i");
+    }),
+  };
+} catch {
+  console.error("scrub rules not found in source dir");
+  process.exit(1);
+}
 
 const MODULES = [
   "decimal-utils.js",
@@ -63,26 +87,14 @@ const resolvePath = (fromModule, spec) => {
   return resolved;
 };
 
-// Scrubs internal repository paths, module names and file names out of comment
-// lines before they are baked into the published bundle. Only lines that are
-// unambiguously comments (`//`, `/*`, `*`, `*/`) are touched, so code and
-// string literals are never rewritten. Values are never affected.
+// Apply source-provided replacements only to full comment lines. Code and
+// string literals retain their original values.
 const scrubComments = (source) =>
   source
     .split("\n")
     .map((line) => {
       if (!/^\s*(\/\/|\/\*|\*)/.test(line)) return line;
-      return line
-        .replace(/(?:[\w.-]+\/)+[\w.-]+\.py(?:::[\w.]+)?/g, "產線模組")
-        .replace(/[\w.-]+\.py(?:::[\w.]+)?/g, "產線模組")
-        .replace(/__(?:fixtures|tests)__(?:\/[\w./-]+)?/g, "驗證資料")
-        .replace(/(?<![\w.])\.py\b\s*/g, "")
-        .replace(
-          /(?:src|tests|modules|services|enums|tasks|lib)\/[\w./-]+/g,
-          "產線模組",
-        )
-        .replace(/mini_api|mini_merchant/g, "產線")
-        .replace(/(產線(?:模組)?)(?:[ 　]+\1)+/g, "$1");
+      return rules.replace.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), line);
     })
     .join("\n");
 
@@ -152,7 +164,7 @@ const transform = (modPath, source) => {
 };
 
 let out = `// GENERATED FILE — do not edit by hand. Rebuilt by tools/build-engine.mjs
-// from the golden-tested rtp-engine ES modules (game logic + paytable data
+// from verified engine source modules (game logic + paytable data
 // copied verbatim; only module syntax is rewritten).
 (function (root) {
   "use strict";
@@ -203,6 +215,13 @@ out += `  var registry = __require("registry.js");
   }
 })(typeof self !== "undefined" ? self : globalThis);
 `;
+
+for (const [index, line] of out.split("\n").entries()) {
+  if (rules.forbid.some((pattern) => pattern.test(line))) {
+    console.error("scrub rule violation at line", index + 1);
+    process.exit(1);
+  }
+}
 
 writeFileSync(OUT, out);
 console.log("wrote", OUT, out.length, "bytes,", MODULES.length, "modules");

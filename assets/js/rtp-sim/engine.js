@@ -1,5 +1,5 @@
 // GENERATED FILE — do not edit by hand. Rebuilt by tools/build-engine.mjs
-// from the golden-tested rtp-engine ES modules (game logic + paytable data
+// from verified engine source modules (game logic + paytable data
 // copied verbatim; only module syntax is rewritten).
 (function (root) {
   "use strict";
@@ -32,13 +32,13 @@
 
 __define("decimal-utils.js", function () {
 /**
- * 產線 全程使用 Python Decimal（預設 28 位有效數字、quantize 預設
- * ROUND_HALF_EVEN）。瀏覽器端模擬工具改用 IEEE754 double + 手動 half-even
- * 捨入逼近 Decimal.quantize 行為——本引擎為「RTP 決策參考」模擬預覽工具，非
- * 實際結算帳本，浮點精度已遠超過模擬統計雜訊，不影響業務判讀。
+ * Production arithmetic uses decimal values with 28 significant digits and
+ * round-half-even quantization. This preview uses IEEE754 double with manual
+ * half-even rounding to approximate the same behavior. It supports RTP decisions
+ * rather than settlement; floating-point error is below simulation noise.
  */
 
-/** 四捨五入至指定小數位，精確半數採 banker's rounding（round-half-even），逼近 Python Decimal.quantize 預設行為。 */
+/** 四捨五入至指定小數位，精確半數採 banker's rounding（round-half-even）。 */
 const roundHalfEven = (value, decimals = 2) => {
   const factor = Math.pow(10, decimals);
   const scaled = value * factor;
@@ -61,10 +61,10 @@ return { roundHalfEven: roundHalfEven, round2: round2 };
 
 __define("card.js", function () {
 /**
- * 卡牌整數編碼（逐位元組移植自 產線模組）。
+ * 卡牌整數編碼與產線結果逐位元組一致。
  *
  * 編碼公式：card = (花色碼 + CARD_SUIT_HEX_OFFSET) × CARD_ENCODING_BASE + 點數碼
- * 唯讀取材來源：產線模組
+ * 花色與點數依下列公式編碼。
  */
 
 const CARD_SUIT_HEX_OFFSET = 10;
@@ -99,10 +99,10 @@ return { CARD_SUIT_HEX_OFFSET: CARD_SUIT_HEX_OFFSET, CARD_ENCODING_BASE: CARD_EN
 
 __define("blackjack-rtp-scale-table.js", function () {
 /**
- * 產線模組 逐鍵值原樣複製（唯讀取材、
- * 不重新推導）。RTP（2 位小數字串）→ scale（Number，逼近原始 20 位小數精度，見
- * paytables/blackjack.js 模組註解「精度」段）。機器產生檔，不應手動編輯；如需
- * 更新請重新執行 產線 產表腳本並整份覆蓋本檔內容。
+ * RTP 縮放值逐鍵保留定稿資料，不重新推導。
+ * RTP（2 位小數字串）→ scale（Number，保留約 20 位小數精度；見
+ * 賠付公式的精度說明）。機器產生檔，不應手動編輯；如需
+ * 更新時應由定稿資料重新產表並整份覆蓋本檔。
  */
 const __default__ = {
   52.29: 0.00017981996473036152,
@@ -4800,12 +4800,12 @@ return { "default": __default__ };
 
 __define("seed.js", function () {
 /**
- * 產線模組 逐位元組移植（唯讀取材，禁止修改來源檔案）。
+ * 遊戲結果產生流程與產線結果逐位元組一致。
  *
- * 每個 generate_*_result 函式與 Python 版本演算法步驟一一對應（見各函式註解引用
- * 的原始行號），純函式、同輸入永遠同輸出。正確性由 驗證資料 黃金比對測試驗證。
+ * 各遊戲的結果產生函式依相同演算法步驟實作；它們是純函式，
+ * 同輸入永遠同輸出，並經固定案例逐值驗證。
  *
- * BigInt 用於還原 Python 任意精度整數運算（>>3、%47 等位元操作在 JS Number
+ * BigInt 用於保留任意精度整數運算（>>3、%47 等位元操作在 JS Number
  * 53-bit 安全整數範圍內會失真，故 hex→整數換算一律走 BigInt）。
  */
 const { sha256Hex, hmacSha256Hex, hmacSha512Hex } = __require("hash.js");
@@ -4814,7 +4814,7 @@ const { buildCardPool } = __require("card.js");
 const TWO_POW_NEG_53 = Math.pow(2, -53);
 
 /**
- * 雙輪洗牌共用核心（對齊 create_nums，BC.Game createNums）。
+ * 雙輪洗牌共用核心。
  * 給定 (allNums, hashStr) 永遠回相同排序結果。
  */
 const createNums = (allNums, hashStr) => {
@@ -4824,7 +4824,7 @@ const createNums = (allNums, hashStr) => {
     nums.push({ num: c, hash: h });
     h = h.slice(1) + h[0];
   }
-  // 依 hash 字典序穩定排序（對齊 Python list.sort key=hash，Timsort 穩定排序）
+  // 依 hash 字典序穩定排序；相同 hash 保持原始順序。
   return nums
     .map((item, index) => ({ item, index }))
     .sort((a, b) => {
@@ -4842,7 +4842,7 @@ const hexPrefixMod = (hashHex, prefixLen, mod) => {
 };
 
 /**
- * generate_dice_result 移植：回傳 2 位小數 Number（0.00~100.00 附近）。
+ * 骰子結果：回傳 2 位小數 Number（0.00~100.00 附近）。
  */
 const generateDiceResult = (serverSeed, clientSeed, nonce) => {
   const message = `${clientSeed}:${nonce}`;
@@ -4857,7 +4857,7 @@ const generateDiceResult = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * generate_flip_result 移植：回傳 0（Heads）或 1（Tails）。
+ * 翻牌結果：回傳 0（Heads）或 1（Tails）。
  * round 為 1-based 局數索引，nonce 在整串連翻中固定不變。
  */
 const generateFlipResult = (serverSeed, clientSeed, nonce, round) => {
@@ -4877,7 +4877,7 @@ const MINES_ALL_NUMS = [
 ];
 
 /**
- * generate_mines_result 移植：回傳 { fullResult, minePositions }。
+ * 地雷結果：回傳 { fullResult, minePositions }。
  */
 const generateMinesResult = (
   serverSeed,
@@ -4888,18 +4888,18 @@ const generateMinesResult = (
   const hashHex = hmacSha256Hex(serverSeed, `${clientSeed}:${nonce}`);
   const round1 = createNums([...MINES_ALL_NUMS], hashHex);
   const seed2 = sha256Hex(hashHex);
-  // 第二輪 create_nums 的 all_nums 引數＝第一輪完整輸出（{num,hash} 物件陣列本身，
-  // 對齊 Python `final_nums = create_nums(final_nums, seed2)`：round1 每個元素被
-  // 當作 round2 的 c，整包塞進 round2 的 num 欄位、形成巢狀 { num: {num,hash}, hash }。
+  // 第二輪的 allNums 引數是第一輪的完整輸出（{num,hash} 物件陣列本身，
+  // 每個元素作為第二輪的 c，形成巢狀 { num: {num,hash}, hash }。
+  // 此結構保留第一輪元素與第二輪 hash 的對應關係。
   const round2 = createNums(round1, seed2);
   const result = round2.map((m) => m.num.num);
   return { fullResult: result, minePositions: result.slice(0, mineCount) };
 };
 
 /**
- * generate_limbo_result 移植：回傳 2 位小數 Number（crash_point）。
- * houseEdge 為百分比整數（預設 1，對齊 產線 呼叫端從未帶入其他值，見
- * 產線模組 limbo_bet：generate_limbo_result 呼叫未傳 house_edge，恆用預設）。
+ * 倍率結果：回傳 2 位小數 Number（crash_point）。
+ * houseEdge 為百分比整數；預設為 1，標準呼叫流程不覆寫此值。
+ * 因此未明確傳入 houseEdge 時，結果使用預設 house edge。
  */
 const generateLimboResult = (
   serverSeed,
@@ -4924,7 +4924,7 @@ const KENO_POOL = [
 ];
 
 /**
- * generate_keno_result 移植：回傳開獎 10 個號碼（1~40 不重複）。
+ * 選號結果：回傳 10 個開獎號碼（1~40 不重複）。
  */
 const generateKenoResult = (serverSeed, clientSeed, nonce) => {
   const hashHex = hmacSha256Hex(serverSeed, `${clientSeed}:${nonce}`);
@@ -4935,7 +4935,7 @@ const generateKenoResult = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * _chicken_byte_stream + generate_chicken_result 移植（Stake Fisher-Yates）。
+ * 雞群結果使用逐位元組洗牌（Stake Fisher-Yates）。
  * 回傳 { fullSequence, bonePositions, deathPoint }。
  */
 const generateChickenResult = (
@@ -4984,7 +4984,7 @@ const generateChickenResult = (
 };
 
 /**
- * generate_plinko_result 移植（HMAC-SHA512）。回傳 { directions, slotIndex }。
+ * 落球結果使用 HMAC-SHA512，回傳 { directions, slotIndex }。
  */
 const generatePlinkoResult = (serverSeed, clientSeed, nonce, rows) => {
   const msg = `${clientSeed}:${nonce}`;
@@ -5004,8 +5004,8 @@ const generatePlinkoResult = (serverSeed, clientSeed, nonce, rows) => {
 
 const BLACKJACK_ALL_CARDS_1 = buildCardPool();
 
-/** 單張牌流公式（generate_blackjack_result 逐張核心，供 generateBlackjackResult 與
- * blackjackCardAt 共用，兩者輸出逐位元組相同）。 */
+/** 單張牌流公式供完整牌流與單張牌查詢共用；
+ * 兩種查詢方式對同一張牌的輸出逐位元組相同。 */
 const blackjackCardAtIndex = (serverSeed, clientSeed, nonce, i) => {
   const message = `${clientSeed}:${nonce}:${i}`;
   const hashHex = hmacSha256Hex(serverSeed, message);
@@ -5018,7 +5018,7 @@ const blackjackCardAtIndex = (serverSeed, clientSeed, nonce, i) => {
 };
 
 /**
- * generate_blackjack_result 移植：回傳長度 52 的牌流（產線模組 編碼值）。
+ * 牌流結果：回傳長度 52 的卡牌編碼值。
  * 供黃金比對測試與需要完整牌流的呼叫端使用。
  */
 const generateBlackjackResult = (serverSeed, clientSeed, nonce) => {
@@ -5033,8 +5033,7 @@ const generateBlackjackResult = (serverSeed, clientSeed, nonce) => {
  * 惰性版本：僅在實際被消耗到時才計算該張牌（單次 HMAC 呼叫），公式與
  * generateBlackjackResult 逐位元組相同、僅省略未消耗牌張的運算。
  * 效能考量：Monte Carlo 模擬每局實際消耗遠少於 52 張（通常 4~10 張），高筆數模擬
- * （如 100,000 筆 × 20 次）若每局都算滿 52 張會造成不必要的效能負擔（見
- * games/blackjack.js 使用方式）。
+ * （如 100,000 筆 × 20 次）若每局都算滿 52 張會造成不必要的效能負擔。
  */
 const createBlackjackCardStream = (serverSeed, clientSeed, nonce) => {
   const cache = [];
@@ -5047,7 +5046,7 @@ const createBlackjackCardStream = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * generate_wheel_result 移植：回傳 float ∈ [0, 1)。
+ * 轉輪結果：回傳 float ∈ [0, 1)。
  */
 const generateWheelResult = (serverSeed, clientSeed, nonce) => {
   const message = `${clientSeed}:${nonce}`;
@@ -5063,7 +5062,7 @@ const generateWheelResult = (serverSeed, clientSeed, nonce) => {
 const BACCARAT_CARD_POOL = buildCardPool();
 
 /**
- * generate_baccarat_result 移植：回傳長度 6 的牌流（產線模組 編碼值）。
+ * 百家樂結果：回傳長度 6 的卡牌編碼值。
  */
 const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
   const cards = [];
@@ -5081,9 +5080,9 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
 };
 
 /**
- * generate_slot_result 移植（`產線模組:584-620`，HMAC-SHA256 byte 流）。
+ * 停軸結果使用 HMAC-SHA256 byte 流。
  *
- * 演算法（與 Python 逐位元組對應）：
+ * 演算法逐位元組對應產線結果：
  *   ① byte 流：HMAC-SHA256(key=serverSeed, msg=`${clientSeed}:${nonce}:${cursor}`)，
  *      cursor 自 0 遞增、每輪產出 32 bytes 依序消耗（形狀同 generateChickenResult）。
  *   ② bytes→float：每軸依序消耗 4 bytes，f = Σ byte[i] / 256^(i+1)，值域 [0, 1)。
@@ -5129,7 +5128,7 @@ const generateSlotResult = (
 };
 
 /**
- * generate_frog_cross_result 移植（`產線模組`，Stake Dragon Tower 官方演算法）。
+ * 過河結果使用 Stake Dragon Tower 的 HMAC-SHA256 byte 流。
  *
  * 與 generateChickenResult 同一套 HMAC-SHA256 byte 流，只差映射：
  *   逐排 pool = [0..padCount-1]，**每排只消耗 frogCount 個 float**：
@@ -5183,7 +5182,7 @@ const generateFrogCrossResult = (
 };
 
 /**
- * generate_slot_result_with_reveal 移植（`產線模組`，HMAC-SHA256 byte 流）。
+ * 含揭曉的停軸結果使用 HMAC-SHA256 byte 流。
  *
  * 與 generateSlotResult 的唯一差異：停止位置取完後，**同一條 byte 流**再取一次
  * 4 bytes 換出神秘符號揭曉索引 revealIndex = floor(f × revealSymbolCount)。
@@ -5236,7 +5235,7 @@ return { createNums: createNums, generateDiceResult: generateDiceResult, generat
 
 __define("paytables/dice.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * 骰子賠付公式與產線結果逐位元組一致。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5281,7 +5280,7 @@ return { computedWinAmount: computedWinAmount };
 
 __define("paytables/flip.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * 連翻倍率公式與產線結果逐位元組一致。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5303,14 +5302,14 @@ return { FLIP_STREAK_CAP: FLIP_STREAK_CAP, multiplierForStreak: multiplierForStr
 
 __define("paytables/limbo.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * LIMBO 賠付公式與產線結果逐位元組一致。
  *
- * 🔴 重要對照發現（見實作回報「未決疑問」）：產線 生產環境呼叫
- * generate_limbo_result 時從未帶入 house_edge 參數（恆用預設值 1），
- * computed_win_amount 本身也不吃 effective_rtp——意即 LIMBO 目前後端實際遊戲
- * 結果與商戶／玩家設定的「RTP」欄位無關，crash_point 分布恆為 house_edge=1
- * （99% 理論 RTP）。本引擎按「與產線邏輯完全一致」要求原樣移植此行為
- * （見 seed.js generateLimboResult 預設 houseEdge=1、呼叫端不覆寫）。
+ * 標準遊戲流程使用預設 house edge 1，
+ * 結果產生時不傳入其他 house edge；
+ * 賠付公式本身也不讀取 RTP 設定。因此 LIMBO 遊戲結果
+ * 不隨 RTP 設定變動，倍率分布使用 house edge 1
+ * （理論 RTP 約 99%）。本引擎保留此行為。
+ * 未明確傳入 house edge 時，結果產生器採用預設值。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5342,7 +5341,7 @@ return { TARGET_MIN: TARGET_MIN, TARGET_MAX: TARGET_MAX, computedWinAmount: comp
 
 __define("paytables/mines.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * 地雷倍率公式與產線結果逐位元組一致。
  */
 const { round2 } = __require("decimal-utils.js");
 
@@ -5374,8 +5373,8 @@ return { multiplerByGems: multiplerByGems };
 
 __define("paytables/keno.js", function () {
 /**
- * 逐位元組移植自 產線模組（PAYTABLE 表體數字
- * 唯一真相，不進 DB，禁止自行調整）+ 產線模組 的 BASE_RTP／k 縮放。
+ * 賠付表數字是定稿資料，禁止自行調整；
+ * 倍率使用基準 RTP 與縮放係數計算。
  */
 const DIFFICULTIES = ["Classic", "Low", "Medium", "High"];
 
@@ -5506,7 +5505,7 @@ return { DIFFICULTIES: DIFFICULTIES, BASE_RTP: BASE_RTP, PAYTABLE: PAYTABLE, get
 
 __define("paytables/chicken.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * 雞群賠率資料與產線結果逐位元組一致。
  * 共用於 CHICKEN（total_cells=20）／BAO（20）／PENGUIN（22）三款變體。
  */
 const { round2 } = __require("decimal-utils.js");
@@ -5550,8 +5549,8 @@ return { CHICKEN_DIFFICULTY_BONES: CHICKEN_DIFFICULTY_BONES, chickenMultiplier: 
 
 __define("paytables/plinko.js", function () {
 /**
- * 逐位元組移植自 產線模組 + 產線模組 的
- * BASE_RTP／k 縮放。
+ * 落球賠付資料與產線結果逐位元組一致；
+ * 倍率使用基準 RTP 與縮放係數計算。
  */
 const RISKS = ["Low", "Medium", "High"];
 
@@ -5626,8 +5625,8 @@ return { RISKS: RISKS, BASE_RTP: BASE_RTP, PAYOUTS: PAYOUTS, getBaseMultiplier: 
 
 __define("paytables/wheel.js", function () {
 /**
- * 逐位元組移植自 產線模組 + 產線模組 的
- * BASE_RTP／k 縮放。
+ * 轉輪賠付資料與產線結果逐位元組一致；
+ * 倍率使用基準 RTP 與縮放係數計算。
  */
 const RISKS = ["Low", "Medium", "High"];
 const VALID_SEGMENTS = [10, 20, 30, 40, 50];
@@ -5711,18 +5710,18 @@ return { RISKS: RISKS, VALID_SEGMENTS: VALID_SEGMENTS, BASE_RTP: BASE_RTP, PAYOU
 
 __define("paytables/baccarat.js", function () {
 /**
- * 逐位元組移植自 產線模組 +
- * 產線模組 + 產線模組 + 產線模組。
+ * 百家樂機率、賠付、補牌與結算規則與產線結果逐位元組一致。
+ * 下列精確分數直接用於模擬。
  *
  * 機率常數（P_PLAYER_WIN / P_BANKER_WIN / P_TIE）為窮舉精確分數，直接取
- * 產線 實際跑出的分子/分母（見 驗證資料）硬編碼，
- * 不在瀏覽器端重新窮舉（避免二次實作漂移風險，單一真相來源＝產線 常數本身）。
+ * 已驗證的分子與分母硬編碼，
+ * 不在瀏覽器端重新窮舉，以避免二次實作漂移。
  * 分母 4826809 遠低於 JS 安全整數上限，double 除法精度足以支撐本模擬工具需求。
  */
 const { round2 } = __require("decimal-utils.js");
 const { decodeCardRank } = __require("card.js");
 
-// 精確分數（來源：產線 baccarat_probability.compute_outcome_probabilities()）
+// 已驗證的精確機率分數
 const P_PLAYER_WIN = 2153464 / 4826809;
 const P_BANKER_WIN = 2212744 / 4826809;
 const P_TIE = 460601 / 4826809;
@@ -5793,7 +5792,7 @@ const baccaratRtpAchievable = (effectiveRtp) => {
   });
 };
 
-// ---------------- 產線模組 ----------------
+// ---------------- 百家樂補牌規則 ----------------
 
 /** 百家樂點值：A=1、2~9 面值、10/J/Q/K=0。 */
 const pointValue = (card) => {
@@ -5821,11 +5820,11 @@ const bankerDrawsThird = (bankerTotal, playerThirdPoint) => {
   return false; // bankerTotal === 7，停牌
 };
 
-// ---------------- 產線模組 ----------------
+// ---------------- 百家樂結算 ----------------
 
 /**
  * 依 6 張生成牌（index 0~5）解析出實際發出的牌與雙方點數。
- * cards: 長度 6 的 array（產線模組 代號）。
+ * cards: 長度 6 的卡牌編碼陣列。
  */
 const resolveHand = (cards) => {
   const playerInitial = cards.slice(0, 2);
@@ -5939,8 +5938,8 @@ return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BACCARAT_MIN_EFFECTIVE_RTP: BACCARA
 
 __define("paytables/blackjack-engine.js", function () {
 /**
- * 逐位元組移植自 產線模組（純函式、
- * 無 DB/session 副作用）。
+ * 二十一點結算公式與產線結果逐位元組一致，
+ * 為純函式，沒有持久狀態副作用。
  */
 const { decodeCardRank } = __require("card.js");
 const { blackjackWinPayout, blackjackNaturalPayout, blackjackPushPayout, blackjackInsurancePayout } = __require("paytables/blackjack.js");
@@ -6125,11 +6124,11 @@ return { cardRank: cardRank, handValue: handValue, isNaturalBlackjack: isNatural
 
 __define("paytables/blackjack.js", function () {
 /**
- * 逐位元組移植自 產線模組。
+ * 二十一點賠付資料與產線結果逐位元組一致。
  *
- * BLACKJACK_RTP_SCALE_TABLE 為靜態反解對照表（開發階段一次性反解產出，非執行期
- * DP 運算），直接自 產線 原始 常數轉存為 JS 物件（見
- * blackjack-rtp-scale-table.js 產生方式：唯讀取材、逐鍵值原樣複製，不重新推導）。
+ * RTP 縮放值使用靜態反解對照表（開發階段一次性反解產出，非執行期
+ * DP 運算）；以定稿常數建立 JS 物件（見
+ * 定稿縮放值逐鍵保留，不在執行期重新推導）。
  */
 const RAW_SCALE_TABLE = __require("blackjack-rtp-scale-table.js").default;
 
@@ -6192,12 +6191,12 @@ return { BLACKJACK_GAME_CODE: BLACKJACK_GAME_CODE, BLACKJACK_NATIVE_RTP: BLACKJA
 
 __define("paytables/slot.js", function () {
 /**
- * 老虎機（slot）家族賠付資料：逐值移植自 產線
- * `產線模組` 與
- * `產線模組`。
+ * 老虎機（slot）家族賠付資料與產線結果逐值一致。
+ * 兩款遊戲共用賠付線，但各有定稿賠付表與環帶。
+ * 環帶展開與中獎規則依下列資料計算。
  *
  * 🔴 表體數字與環帶排列是**唯一真相、禁止自行調整**——同 keno/dice 等既有款慣例。
- * 環帶由產線 `build_reel_strip()` 決定性展開後導出，非手抄。
+ * 環帶以決定性流程展開後導出，非手抄。
  *
  * 兩款的結構差異（非筆誤）：
  *   - FRUIT_KING：單一 `WILD`，**自身連中會賠**（在 PAYTABLE 內）。
@@ -6939,8 +6938,8 @@ return { PAYLINES: PAYLINES, FRUIT_KING_NATIVE_RTP: FRUIT_KING_NATIVE_RTP, FRUIT
 
 __define("paytables/aurora-bear.js", function () {
 /**
- * AURORA_BEAR（極光熊）賠付資料：逐值移植自 產線
- * `產線模組`。
+ * AURORA_BEAR（極光熊）賠付資料與產線結果逐值一致。
+ * 使用定稿環帶與賠付線資料。
  *
  * 🔴 表體數字與環帶排列是**唯一真相、禁止自行調整**——同既有各款慣例。
  * 環帶與賠付線由產線隨碼帶入的定稿資料檔以腳本導出，非手抄。
@@ -7281,8 +7280,8 @@ return { AURORA_BEAR_ROWS_BY_REEL: AURORA_BEAR_ROWS_BY_REEL, AURORA_BEAR_PAYLINE
 
 __define("paytables/frog-cross.js", function () {
 /**
- * FROG_CROSS（青蛙過河）賠率：逐值移植自 產線
- * `產線模組`。
+ * FROG_CROSS（青蛙過河）賠率與產線結果逐值一致。
+ * 每排依難度套用對應安全格數。
  *
  * 每排獨立的幾何級數（與 chicken / mines 的超幾何不同構）：
  *   m(k) = (padCount / frogCount)^k × RTP / 100
@@ -7321,7 +7320,7 @@ __define("games/random-choice.js", function () {
  *
  * 🔴 範圍界定：本函式只用於「模擬玩家群體屬於哪一種行為假設分組」（如 baccarat
  * 玩家這局押哪個注型、flip 玩家這局的目標連翻深度）——這是模擬統計抽樣輸入，
- * 不是遊戲結果本身；遊戲結果（牌局、骰值、地雷位置等）一律走 seed.js 移植的
+ * 不是遊戲結果本身；遊戲結果（牌局、骰值、地雷位置等）一律走固定種子的
  * 「provably fair」演算法，兩者職責不可混淆。
  */
 const weightedChoiceIndex = (weights) => {
@@ -7377,11 +7376,11 @@ __define("games/flip.js", function () {
  * 遊戲專屬參數：連翻深度分布假設（深度 1~5+ 五個百分比，需總和 100%）。
  *
  * 每筆模擬依分布隨機抽出本局玩家的目標連翻深度（抽樣屬玩家行為假設，非遊戲
- * 結果 RNG），「深度 5+」為離散化最後一桶、建模上視為目標深度恰為 5（design
- * 稿五桶分解表 depth1~5+ 為離散分桶展示，非無限追打，故 Monte Carlo 模擬與
+ * 結果 RNG）；「深度 5+」為離散化最後一桶，建模上視為目標深度恰為 5。
+ * 五桶分解表 depth1~5+ 用於離散展示，並非無限追打；Monte Carlo 模擬與
  * 下方 analyticDepthBreakdown 收斂曲線分解採同一「5+ 視為 5」簡化、確保
- * 模擬彙總與分解子表口徑一致——此為實作階段依 Brief 委任判斷之建模簡化，
- * 已於實作回報中說明）。
+ * 模擬彙總與分解子表口徑一致。
+ *
  *
  * 玩家連續押同一面（固定取 side=0，二元對稱不影響機率分布）直到：
  *   (a) 未達目標深度前翻出對面 → 全額落敗（bet 全輸）
@@ -7452,10 +7451,10 @@ __define("games/limbo.js", function () {
 /**
  * LIMBO 單筆模擬（A 類）。
  *
- * 🔴 見 paytables/limbo.js 模組註解：產線 LIMBO 實際遊戲結果與商戶／
- * 玩家「RTP」設定無關（house_edge 恆用預設 1）。本模擬引擎按「與產線邏輯完全
- * 一致」原樣移植此行為——即 LIMBO 模擬結果的「實際 RTP」不會隨 RTP 設定輸入
- * 變動（恆收斂於 ~99%），此為已知現況、非本引擎缺陷（詳見實作回報未決疑問）。
+ * 標準遊戲流程使用預設 house edge 1；
+ * 此值不隨 RTP 設定變動。本模擬引擎保留此行為，
+ * 因此 LIMBO 模擬結果的實際 RTP 不會隨輸入的 RTP 設定
+ * 變動（恆收斂於約 99%）。
  *
  * 遊戲專屬參數：玩家平均命中機率（%）→ 映射為 target_multiplier = 99 / 命中機率
  * （crash_point 分布 house_edge=1 時，P(crash>=m)≈99/(100m) 之反解）。
@@ -7688,7 +7687,7 @@ __define("games/baccarat.js", function () {
  * 類型分布下期望 RTP 恆等於設定值，僅波動幅度隨分布不同）。
  * 遊戲專屬參數：玩家投注類型分布假設（閒／莊／和 各佔比 %，需總和 100%）。
  * 每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，非遊戲結果
- * RNG，見 random-choice.js 說明），僅該注型下注、其餘兩注型金額為 0。
+ * RNG），僅該注型下注、其餘兩注型金額為 0。
  */
 const { generateBaccaratResult } = __require("seed.js");
 const { resolveHand, settleBaccarat } = __require("paytables/baccarat.js");
@@ -7732,18 +7731,17 @@ __define("games/blackjack.js", function () {
 /**
  * BLACKJACK 單筆模擬（C 類，決策品質依賴，不提供策略參數）。
  *
- * 🔴 建模範圍界定（見實作回報說明）：產線 本身無「AI 玩家」概念（僅接收真人
- * socket 決策），故「一般玩家模擬策略」本質是本引擎新建的模擬輸入假設、非從
- * 產線 移植而來——產線 端唯一必須逐位元組一致的是 RNG（generateBlackjackResult）
- * 與賠付／RTP 縮放公式（blackjack.js 全數逐位元組移植），這兩者本模組完整複用。
+ * 建模範圍：一般玩家決策是此模擬器的輸入假設；
+ * 產線處理實際玩家決策。遊戲結果的隨機數、
+ * 賠付與 RTP 縮放公式沿用經驗證的產線行為。
+ * 本模組完整複用這些計算步驟。
  *
- * 「理論完美策略值」不需模擬：BLACKJACK_RTP_SCALE_TABLE 的建構定義本身就是
- * 「scale 使完美策略下 compute_rtp(scale) 精確 quantize 等於設定值 T」，故完美
- * 策略的理論實際 RTP 恆等於 RTP 設定值本身（見 registry.js 呼叫端直接取用輸入值，
- * 不呼叫本檔模擬函式）。
+ * 「理論完美策略值」不需模擬：靜態縮放表使完美策略下的 RTP
+ * 經兩位小數量化後等於設定值，因此其理論 RTP 就是輸入的設定值；
+ * 呼叫端直接取用該值，不執行一般玩家模擬。
  *
- * 「一般玩家模擬策略」（本引擎假設，非後端行為；Leader 已用產線引擎驗證此版本
- * 模擬輸出 ≈98.0%，取代前一版「恆買保險」定義）：
+ * 「一般玩家模擬策略」（模擬輸入假設，預期輸出約 98.0%）：
+ * 此策略取代先前恆買保險的假設：
  *   - 不 split、不 double（單一手牌，簡化決策樹）
  *   - 不買保險：莊家明牌為 A 時一律 noInsurance
  *   - 硬牌（無可作 11 用的 A）：莊家明牌 2～6（弱牌）補到硬 12 即停牌；
@@ -7758,7 +7756,7 @@ const CLASSIFICATION = "C";
 
 const DEFAULT_PARAMS = {};
 
-// dealerPlay()（blackjack-engine.js）以 fullResult[idx] 陣列索引語法讀牌，
+// 結算函式以 fullResult[idx] 陣列索引語法讀牌，
 // 用 Proxy 包住惰性牌流 cardAt(i)，讓陣列語法與惰性計算相容、不改動既有引擎函式簽章。
 const toArrayLikeCardStream = (cardAt) =>
   new Proxy(
@@ -7813,7 +7811,7 @@ const simulateOneUnit = (
   { betAmount, rtp },
 ) => {
   // 惰性牌流：Monte Carlo 模擬每局實際消耗遠少於 52 張，逐張按需計算避免浪費
-  // （見 seed.js createBlackjackCardStream 說明），輸出與 generateBlackjackResult
+  // 按需計算的牌與完整牌流在相同索引處的輸出
   // 逐位元組相同。
   const cardAt = createBlackjackCardStream(serverSeed, clientSeed, nonce);
   const cardsArrayLike = toArrayLikeCardStream(cardAt);
@@ -7886,15 +7884,15 @@ __define("games/slot.js", function () {
 /**
  * 老虎機（slot）家族單筆模擬（A 類）：FRUIT_KING／BUNNY_GOLD 共用。
  *
- * 逐段移植自 產線 `產線模組`
- * （`_line_candidates` / `_match_count` / `_evaluate_line` / `evaluate_spin` /
- * `run_round`），與 `slot_socket_flow` 的整局彙總。
+ * 使用固定環帶、逐線判定與整局彙總流程。
+ * 候選符號、連中格數與加成皆逐線計算；
+ * 免費轉與觸發轉一起構成單一模擬單位。
  *
  * 「一個模擬單位」＝一次觸發轉 ＋ 該次觸發的全部免費轉（免轉零投入，不計入分母），
- * 對齊產線 `RoundOutcome`。
+ * 整局彙總包含免費轉派彩。
  *
- * 🔴 三個容易寫錯、且**不會被真實配置抓到**的地方（產線 `_evaluate_line` docstring
- * 明列，此處逐一守住）：
+ * 三個容易寫錯、且不會被真實配置抓到的地方：
+ *
  *   (a) 加成必須在**候選迴圈內**、對該候選自己的中獎段 `cells[0..count)` 求和——
  *       不得整條線求和一次給所有候選共用。
  *   (b) 加成必須**參與決勝**——不得先挑賠付表倍數最高的候選、再乘加成。
@@ -7927,7 +7925,7 @@ const SLOT_CONFIGS = {
   },
 };
 
-/** 依停軸位置組出盤面：board[row][reel]（對齊產線 build_board 的索引順序）。 */
+/** 依停軸位置組出盤面：board[row][reel]，由行、軸索引取值。 */
 const buildBoard = (strips, stops) => {
   const rows = [];
   for (let row = 0; row < ROWS_COUNT; row += 1) {
@@ -8057,9 +8055,9 @@ __define("games/aurora-bear.js", function () {
 /**
  * AURORA_BEAR（極光熊）單筆模擬（A 類）。
  *
- * 逐段移植自 產線 `產線模組`
- * 的 `run_slot_round`（神秘符號翻牌 ＋ 免費轉黏著 combo WILD），判線本體對齊
- * `產線模組` 在本款傳入的擴充參數（軸優先取格、候選來源、逐線判定）。
+ * 神秘符號揭曉與免費轉黏著 combo WILD 逐步處理；
+ * 判線使用軸優先取格、候選來源與逐線判定。
+ * 同一次觸發的免費轉計入同一模擬單位。
  *
  * 「一個模擬單位」＝一次觸發轉 ＋ 該次觸發的全部免費轉（免轉零投入，不計入分母）。
  *
@@ -8303,7 +8301,7 @@ return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulat
 __define("registry.js", function () {
 /**
  * 遊戲模擬引擎登記表：game_code → { classification, simulateOneUnit, defaultParams }。
- * classification 對齊 Brief 策略依賴分類：
+ * classification 依策略依賴程度分類：
  *   A = 策略無關（僅影響波動幅度，期望 RTP 恆等於設定值）
  *   B = 策略深度依賴（FLIP，結果需按深度分列）
  *   C = 決策品質依賴（BLACKJACK，不提供策略參數，理論值／一般玩家模擬值並列）
@@ -8413,14 +8411,14 @@ return { GAME_REGISTRY: GAME_REGISTRY, GAME_CODES: GAME_CODES };
 
 __define("rtp-bounds.js", function () {
 /**
- * RTP 輸入合法範圍／可達性校驗（逐遊戲對照 產線 既有校驗邏輯移植，
- * 見 產線模組 + 產線模組
- * ::batch_upsert_player_game_settings）。
+ * RTP 輸入合法範圍與可達性校驗。
+ * 通用範圍適用於大多數遊戲；
+ * 部分遊戲另有可達性下界。
  *
- * 通用下界：[0.01, 99.99]（marshmallow validate.Range，見 產線模組
- * upsert_game 的 rtp 參數校驗）——BLACKJACK／BACCARAT 之外全部遊戲僅有此通用範圍
- * 校驗，後端無逐遊戲專屬下界表；依 Brief 明文允許，以此為底線（詳見實作回報，
- * 列出哪些遊戲使用通用底線）。
+ * 通用範圍：[0.01, 99.99]；BLACKJACK／BACCARAT 另有下界。
+ * 其餘遊戲使用通用範圍。
+ * 本檔按遊戲提供對應的校驗函式。
+ *
  */
 const { BLACKJACK_MIN_EFFECTIVE_RTP, blackjackRtpAchievable } = __require("paytables/blackjack.js");
 const { BACCARAT_MIN_EFFECTIVE_RTP, baccaratRtpAchievable } = __require("paytables/baccarat.js");
@@ -8432,8 +8430,7 @@ const GENERIC_MAX = 99.99;
  * @param {string} gameCode 大寫遊戲代號（如 "DICE"／"BLACKJACK"）
  * @param {number} rtp
  * @returns {{ valid: boolean, reasonKey: string|null }}
- *   reasonKey 為 i18n key 後綴（見 locales pages/risk/rtp-simulation.js
- *   validation.* 段），valid=true 時為 null。
+ *   reasonKey 是使用者訊息的查找鍵；valid=true 時為 null。
  */
 const validateRtp = (gameCode, rtp) => {
   if (!Number.isFinite(rtp)) {
@@ -8473,7 +8470,7 @@ const validateRtp = (gameCode, rtp) => {
   return { valid: true, reasonKey: null };
 };
 
-/** 各遊戲 RTP 下界底線來源說明（供實作回報列表使用，不參與執行邏輯）。 */
+/** 各遊戲 RTP 下界類型說明，不參與執行邏輯。 */
 const RTP_FLOOR_SOURCE = {
   DICE: "generic",
   MINES: "generic",

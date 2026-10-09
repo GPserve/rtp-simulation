@@ -3,8 +3,8 @@
 // result-generation and payout logic). Loadable in page, Web Worker and
 // Node (parity harnesses).
 //
-// Production uses Python Decimal (quantize ROUND_HALF_EVEN); the engine
-// approximates it with IEEE754 double + manual half-even rounding — this is
+// Production uses decimal values with round-half-even precision; the engine
+// approximates them with IEEE754 double + manual half-even rounding — this is
 // a decision-support preview, not a settlement ledger.
 (function (root, factory) {
   var api = factory(root);
@@ -24,11 +24,10 @@
   var limboPaytable = req("paytables/limbo.js");
 
   // ---------------------------------------------------------------------
-  // LIMBO override. The bundled source module predates the production fix
-  // that wired effective_rtp into result generation (mini_api `76a8067`,
-  // game_limbo.py: house_edge = 100 − effective_rtp passed into
-  // generate_limbo_result) and pins house_edge to 1. This override
-  // simulates current production behaviour, so the RTP input is live.
+  // LIMBO override. The bundled source module uses a fixed house edge of 1.
+  // Current production derives house edge as 100 − effective RTP and passes
+  // it into result generation. This override models that behavior so the
+  // RTP input affects the result distribution.
   // ---------------------------------------------------------------------
   var limboHitRateToTarget = function (hitRate, rtp) {
     // P(crash ≥ m) ≈ rtp/(100·m) ⇒ target m for a given hit rate = rtp/h.
@@ -42,8 +41,8 @@
     classification: "A",
     defaultParams: { hitRate: 50 },
     simulateOneUnit: function (serverSeed, clientSeed, nonce, params) {
-      // house_edge is DECIMAL(4,2)-exact in production (Decimal 100 − rtp,
-      // then float()); toFixed(2) recovers the exact decimal value before
+      // Production house edge has two decimal places (100 − RTP, then
+      // converted to a float); toFixed(2) recovers that decimal value before
       // the float pipeline.
       var houseEdge = Number((100 - params.rtp).toFixed(2));
       var crashPoint = seed.generateLimboResult(serverSeed, clientSeed, nonce, houseEdge);
