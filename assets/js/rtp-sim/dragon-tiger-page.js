@@ -48,7 +48,10 @@
       },
     };
     P.runSimulation(config, function (result) {
-      P.renderStandardResult(config, result);
+      P.renderStandardResult(config, result, {
+        theoreticalValue: RtpSim.engine.require("paytables/dragon-tiger.js").dragontigerExpectedRtp(config.params, config.rtp, config.betAmount),
+        theoreticalLabel: "Expected RTP (by bet mix)",
+      });
     });
   });
 

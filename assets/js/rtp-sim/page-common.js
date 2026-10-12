@@ -87,6 +87,8 @@
     opts = opts || {};
     var main = result.main;
     var settingLabel = opts.settingLabel || "RTP Setting";
+    var theoreticalValue = opts.theoreticalValue === undefined ? config.rtp : opts.theoreticalValue;
+    var theoreticalLabel = opts.theoreticalLabel === undefined ? "Theoretical Target" : opts.theoreticalLabel;
     el("result-subtitle").textContent =
       "Result of this simulation (average bet " +
       config.betAmount.toLocaleString("en-US") +
@@ -110,8 +112,8 @@
     el("chart-legend-simulated").textContent =
       "Simulated RTP (" + fmtPct(config.rtp) + " setting, one sample per volume)";
     el("chart-legend-theoretical").textContent =
-      "Theoretical Target " + fmtPct(config.rtp);
-    renderChart(el("chart-container"), result.convergence, config.rtp);
+      theoreticalLabel + " " + fmtPct(theoreticalValue);
+    renderChart(el("chart-container"), result.convergence, theoreticalValue);
   };
 
   // --- Worker lifecycle + progress UI ------------------------------------

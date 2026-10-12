@@ -47,7 +47,10 @@
       },
     };
     P.runSimulation(config, function (result) {
-      P.renderStandardResult(config, result);
+      P.renderStandardResult(config, result, {
+        theoreticalValue: RtpSim.engine.require("paytables/baccarat.js").baccaratExpectedRtp(config.params, config.rtp, config.betAmount),
+        theoreticalLabel: "Expected RTP (by bet mix)",
+      });
     });
   });
 
