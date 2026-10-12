@@ -56,7 +56,65 @@ const roundHalfEven = (value, decimals = 2) => {
 
 const round2 = (value) => roundHalfEven(value, 2);
 
-return { roundHalfEven: roundHalfEven, round2: round2 };
+const TEN = BigInt(10);
+const HUNDRED = BigInt(100);
+
+const powerOfTen = (exponent) => TEN ** BigInt(exponent);
+
+const normalize = (value, scale) => {
+  if (value === BigInt(0)) return { value, scale: 0 };
+  while (scale > 0 && value % TEN === BigInt(0)) {
+    value /= TEN;
+    scale -= 1;
+  }
+  return { value, scale };
+};
+
+// Store a nonnegative decimal as an integer and a decimal scale.
+const decimalFromNumber = (number) => {
+  if (!Number.isFinite(number) || number < 0) throw new Error("Expected a finite nonnegative number");
+  let source = String(number);
+  if (/[eE]/.test(source)) {
+    const parts = source.toLowerCase().split("e");
+    const exponent = Number(parts[1]);
+    const fractionLength = (parts[0].split(".")[1] || "").length;
+    const places = fractionLength - exponent;
+    if (places >= 0 && places <= 100) {
+      source = number.toFixed(places);
+    } else {
+      const digits = parts[0].replace(".", "");
+      return normalize(BigInt(digits) * powerOfTen(Math.max(0, -places)), Math.max(0, places));
+    }
+  }
+  const pieces = source.split(".");
+  const scale = pieces[1] ? pieces[1].length : 0;
+  return normalize(BigInt(pieces.join("")), scale);
+};
+
+const decimalMultiply = (left, right) =>
+  normalize(left.value * right.value, left.scale + right.scale);
+
+const decimalAdd = (left, right) => {
+  const scale = Math.max(left.scale, right.scale);
+  return normalize(
+    left.value * powerOfTen(scale - left.scale) + right.value * powerOfTen(scale - right.scale),
+    scale,
+  );
+};
+
+// Divide once and round the monetary result to integer cents using half-even.
+const decimalDivideToCents = (numerator, denominator) => {
+  if (denominator.value <= BigInt(0)) throw new Error("Expected a positive denominator");
+  const scaledNumerator = numerator.value * powerOfTen(denominator.scale) * HUNDRED;
+  const scaledDenominator = denominator.value * powerOfTen(numerator.scale);
+  const quotient = scaledNumerator / scaledDenominator;
+  const remainder = scaledNumerator % scaledDenominator;
+  const twice = remainder * BigInt(2);
+  return twice > scaledDenominator || (twice === scaledDenominator && quotient % BigInt(2) !== BigInt(0))
+    ? quotient + BigInt(1) : quotient;
+};
+
+return { roundHalfEven: roundHalfEven, round2: round2, decimalFromNumber: decimalFromNumber, decimalMultiply: decimalMultiply, decimalAdd: decimalAdd, decimalDivideToCents: decimalDivideToCents };
 });
 
 __define("card.js", function () {
@@ -5079,6 +5137,21 @@ const generateBaccaratResult = (serverSeed, clientSeed, nonce) => {
   return cards;
 };
 
+/** 龍虎各取一張牌，順序為龍、虎。 */
+const generateDragontigerResult = (serverSeed, clientSeed, nonce) => {
+  const cards = [];
+  for (let i = 0; i < 2; i += 1) {
+    const message = `${clientSeed}:${nonce}:${i}`;
+    const hashHex = hmacSha256Hex(serverSeed, message);
+    const index = hexPrefixMod(hashHex, 15, 47);
+    const targetHex = hashHex.slice(index, index + 14);
+    const numBig = BigInt(`0x${targetHex}`) >> 3n;
+    const f = Number(numBig) * TWO_POW_NEG_53;
+    cards.push(BACCARAT_CARD_POOL[Math.floor(f * 52)]);
+  }
+  return cards;
+};
+
 /**
  * 停軸結果使用 HMAC-SHA256 byte 流。
  *
@@ -5230,7 +5303,7 @@ const generateSlotResultWithReveal = (
   return { stops, revealIndex: Math.floor(nextFloat() * revealSymbolCount) };
 };
 
-return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateSlotResult: generateSlotResult, generateFrogCrossResult: generateFrogCrossResult, generateSlotResultWithReveal: generateSlotResultWithReveal };
+return { createNums: createNums, generateDiceResult: generateDiceResult, generateFlipResult: generateFlipResult, generateMinesResult: generateMinesResult, generateLimboResult: generateLimboResult, KENO_POOL: KENO_POOL, generateKenoResult: generateKenoResult, generateChickenResult: generateChickenResult, generatePlinkoResult: generatePlinkoResult, generateBlackjackResult: generateBlackjackResult, createBlackjackCardStream: createBlackjackCardStream, generateWheelResult: generateWheelResult, generateBaccaratResult: generateBaccaratResult, generateDragontigerResult: generateDragontigerResult, generateSlotResult: generateSlotResult, generateFrogCrossResult: generateFrogCrossResult, generateSlotResultWithReveal: generateSlotResultWithReveal };
 });
 
 __define("paytables/dice.js", function () {
@@ -5718,7 +5791,7 @@ __define("paytables/baccarat.js", function () {
  * 不在瀏覽器端重新窮舉，以避免二次實作漂移。
  * 分母 4826809 遠低於 JS 安全整數上限，double 除法精度足以支撐本模擬工具需求。
  */
-const { round2 } = __require("decimal-utils.js");
+const { decimalFromNumber, decimalMultiply, decimalAdd, decimalDivideToCents } = __require("decimal-utils.js");
 const { decodeCardRank } = __require("card.js");
 
 // 已驗證的精確機率分數
@@ -5731,66 +5804,49 @@ const BET_TYPES = ["player", "banker", "tie"];
 
 const WEIGHT = { player: 1, banker: 0.95, tie: 8 };
 
-const BACCARAT_MIN_EFFECTIVE_RTP = 55.39;
+const BASE_RTP = 98.90;
 const BACCARAT_NATIVE_RTP = { player: 98.77, banker: 98.94, tie: 85.88 };
 
-const winProbability = (betType) => {
-  if (betType === "player") return P_PLAYER_WIN;
-  if (betType === "banker") return P_BANKER_WIN;
-  if (betType === "tie") return P_TIE;
-  throw new Error(`unknown baccarat bet_type: ${betType}`);
-};
-
-const clampEffectiveRtp = (effectiveRtp) => {
-  const clamped = round2(effectiveRtp);
-  if (clamped < BACCARAT_MIN_EFFECTIVE_RTP) return BACCARAT_MIN_EFFECTIVE_RTP;
-  if (clamped > 99.99) return 99.99;
-  return clamped;
-};
-
-const scaleFor = (betType, effectiveRtp) => {
-  const target = effectiveRtp / 100;
-  if (betType === "tie") {
-    return (target / P_TIE - 1) / WEIGHT.tie;
+/** 依三種押注比例及單注結算金額求回報率期望值，單位為百分比。 */
+const baccaratExpectedRtp = ({ playerPct, bankerPct, tiePct }, effectiveRtp, betAmount) => {
+  if (!Number.isFinite(betAmount) || betAmount <= 0) {
+    throw new RangeError("betAmount must be a positive finite number");
   }
-  const pWin = winProbability(betType);
-  return ((target - P_TIE) / pWin - 1) / WEIGHT[betType];
+  const outcomes = [
+    { playerPoint: 1, bankerPoint: 0, probability: P_PLAYER_WIN },
+    { playerPoint: 0, bankerPoint: 1, probability: P_BANKER_WIN },
+    { playerPoint: 0, bankerPoint: 0, probability: P_TIE },
+  ];
+  const bets = [
+    { pct: playerPct, playerBet: betAmount, bankerBet: 0, tieBet: 0 },
+    { pct: bankerPct, playerBet: 0, bankerBet: betAmount, tieBet: 0 },
+    { pct: tiePct, playerBet: 0, bankerBet: 0, tieBet: betAmount },
+  ];
+  return bets.reduce((total, { pct, playerBet, bankerBet, tieBet }) => {
+    const expectedWin = outcomes.reduce((sum, { playerPoint, bankerPoint, probability }) =>
+      sum + probability * settleBaccarat({
+        playerBet, bankerBet, tieBet, playerPoint, bankerPoint, effectiveRtp,
+      }).totalWin, 0);
+    return total + (pct / 100) * (100 * expectedWin / betAmount);
+  }, 0);
 };
+const BASE = decimalFromNumber(BASE_RTP);
+const ONE = decimalFromNumber(1);
+const ZERO = decimalFromNumber(0);
 
-const rtpFromScale = (betType, scale) => {
-  const weight = WEIGHT[betType];
-  let rtp;
-  if (betType === "tie") {
-    rtp = P_TIE * (1 + weight * scale);
-  } else {
-    const pWin = winProbability(betType);
-    rtp = pWin * (1 + weight * scale) + P_TIE;
-  }
-  return round2(rtp * 100);
-};
+const payoutNumerator = (betType, stake, effectiveRtp) =>
+  decimalMultiply(
+    decimalFromNumber(stake),
+    decimalAdd(BASE, decimalMultiply(decimalFromNumber(WEIGHT[betType]), decimalFromNumber(effectiveRtp))),
+  );
 
-/** stake × 該注型倍率，全精度（不 quantize，結算實際使用）。 */
-const baccaratPayout = (betType, stake, effectiveRtp) => {
-  const clamped = clampEffectiveRtp(effectiveRtp);
-  const scale = scaleFor(betType, clamped);
-  const weight = WEIGHT[betType];
-  const multiplier = 1 + weight * scale;
-  return stake * multiplier;
-};
+/** 賠付金額僅於輸出時進位至分。 */
+const baccaratPayout = (betType, stake, effectiveRtp) =>
+  Number(decimalDivideToCents(payoutNumerator(betType, stake, effectiveRtp), BASE)) / 100;
 
-/** effective_rtp → 該注型賠率倍率，quantize 2 位，純供顯示用。 */
+/** 單位押分的賠付金額，供賠率顯示。 */
 const baccaratMultiplier = (betType, effectiveRtp) =>
-  round2(baccaratPayout(betType, 1, effectiveRtp));
-
-/** 三注型須皆可達，T 才整體有效。 */
-const baccaratRtpAchievable = (effectiveRtp) => {
-  const target = round2(effectiveRtp);
-  const clamped = clampEffectiveRtp(effectiveRtp);
-  return BET_TYPES.every((betType) => {
-    const scale = scaleFor(betType, clamped);
-    return rtpFromScale(betType, scale) === target;
-  });
-};
+  baccaratPayout(betType, 1, effectiveRtp);
 
 // ---------------- 百家樂補牌規則 ----------------
 
@@ -5898,42 +5954,152 @@ const settleBaccarat = ({
     [playerResult, bankerResult, tieResult] = [2, 2, 1];
   }
 
-  let playerWin = 0;
-  if (playerResult === 1)
-    playerWin = round2(baccaratPayout("player", playerBet, effectiveRtp));
-  else if (playerResult === 2) playerWin = playerBet;
-
-  let bankerWin = 0;
-  if (bankerResult === 1)
-    bankerWin = round2(baccaratPayout("banker", bankerBet, effectiveRtp));
-  else if (bankerResult === 2) bankerWin = bankerBet;
-
-  let tieWin = 0;
-  if (tieResult === 1)
-    tieWin = round2(baccaratPayout("tie", tieBet, effectiveRtp));
-
-  const totalBet = playerBet + bankerBet + tieBet;
-  const totalWin = playerWin + bankerWin + tieWin;
-
-  let matchStatus;
-  if (totalWin > totalBet) matchStatus = 1;
-  else if (totalWin < totalBet) matchStatus = 0;
-  else matchStatus = 2;
+  const bets = { player: playerBet, banker: bankerBet, tie: tieBet };
+  const results = { player: playerResult, banker: bankerResult, tie: tieResult };
+  const wins = {};
+  let totalNumerator = ZERO;
+  for (const type of BET_TYPES) {
+    let numerator = ZERO;
+    let denominator = ONE;
+    if (results[type] === 1) {
+      numerator = payoutNumerator(type, bets[type], effectiveRtp);
+      denominator = BASE;
+      totalNumerator = decimalAdd(totalNumerator, numerator);
+    } else if (results[type] === 2) {
+      numerator = decimalFromNumber(bets[type]);
+      totalNumerator = decimalAdd(totalNumerator, decimalMultiply(numerator, BASE));
+    }
+    wins[type] = Number(decimalDivideToCents(numerator, denominator)) / 100;
+  }
+  const totalBetCents = decimalDivideToCents(
+    decimalAdd(decimalAdd(decimalFromNumber(playerBet), decimalFromNumber(bankerBet)), decimalFromNumber(tieBet)),
+    ONE,
+  );
+  const totalWinCents = decimalDivideToCents(totalNumerator, BASE);
+  const totalBet = Number(totalBetCents) / 100;
+  const totalWin = Number(totalWinCents) / 100;
+  const matchStatus = totalWinCents > totalBetCents ? 1 : totalWinCents < totalBetCents ? 0 : 2;
 
   return {
     playerResult,
     bankerResult,
     tieResult,
-    playerWin,
-    bankerWin,
-    tieWin,
+    playerWin: wins.player,
+    bankerWin: wins.banker,
+    tieWin: wins.tie,
     matchStatus,
     totalBet,
     totalWin,
   };
 };
 
-return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BACCARAT_MIN_EFFECTIVE_RTP: BACCARAT_MIN_EFFECTIVE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, baccaratRtpAchievable: baccaratRtpAchievable, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
+return { P_TIE: P_TIE, BET_TYPES: BET_TYPES, BASE_RTP: BASE_RTP, BACCARAT_NATIVE_RTP: BACCARAT_NATIVE_RTP, baccaratExpectedRtp: baccaratExpectedRtp, baccaratPayout: baccaratPayout, baccaratMultiplier: baccaratMultiplier, pointValue: pointValue, handTotal: handTotal, isNatural: isNatural, playerDrawsThird: playerDrawsThird, bankerDrawsThird: bankerDrawsThird, resolveHand: resolveHand, settleBaccarat: settleBaccarat, P_PLAYER_WIN: P_PLAYER_WIN, P_BANKER_WIN: P_BANKER_WIN };
+});
+
+__define("paytables/dragon-tiger.js", function () {
+const { decodeCardRank } = __require("card.js");
+const { decimalFromNumber, decimalMultiply, decimalAdd, decimalDivideToCents } = __require("decimal-utils.js");
+
+const P_DRAGON_WIN = 6 / 13;
+const P_TIGER_WIN = 6 / 13;
+const P_TIE = 1 / 13;
+const BASE_RTP = 96.15;
+const TIE_HALF_RETURN_RATIO = 0.5;
+const BET_TYPES = ["dragon", "tiger", "tie"];
+const DRAGON_TIGER_NATIVE_RTP = { dragon: 96.15, tiger: 96.15, tie: 69.23 };
+
+/** 依三種押注比例及單注結算金額求回報率期望值，單位為百分比。 */
+const dragontigerExpectedRtp = ({ dragonPct, tigerPct, tiePct }, effectiveRtp, betAmount) => {
+  if (!Number.isFinite(betAmount) || betAmount <= 0) {
+    throw new RangeError("betAmount must be a positive finite number");
+  }
+  const outcomes = [
+    { dragonRank: 2, tigerRank: 1, probability: P_DRAGON_WIN },
+    { dragonRank: 1, tigerRank: 2, probability: P_TIGER_WIN },
+    { dragonRank: 1, tigerRank: 1, probability: P_TIE },
+  ];
+  const bets = [
+    { pct: dragonPct, dragonBet: betAmount, tigerBet: 0, tieBet: 0 },
+    { pct: tigerPct, dragonBet: 0, tigerBet: betAmount, tieBet: 0 },
+    { pct: tiePct, dragonBet: 0, tigerBet: 0, tieBet: betAmount },
+  ];
+  return bets.reduce((total, { pct, dragonBet, tigerBet, tieBet }) => {
+    const expectedWin = outcomes.reduce((sum, { dragonRank, tigerRank, probability }) =>
+      sum + probability * settleDragontiger({
+        dragonBet, tigerBet, tieBet, dragonRank, tigerRank, effectiveRtp,
+      }).totalWin, 0);
+    return total + (pct / 100) * (100 * expectedWin / betAmount);
+  }, 0);
+};
+
+const BASE = decimalFromNumber(BASE_RTP);
+const ONE = decimalFromNumber(1);
+const TWO = decimalFromNumber(2);
+const ZERO = decimalFromNumber(0);
+const WEIGHT = { dragon: 1, tiger: 1, tie: 8 };
+
+const resolveDragonTigerHand = (cards) => ({
+  dragonRank: decodeCardRank(cards[0]),
+  tigerRank: decodeCardRank(cards[1]),
+});
+
+/** 先保留完整精度，僅在輸出金額時進位至分。 */
+const settleDragontiger = ({
+  dragonBet,
+  tigerBet,
+  tieBet,
+  dragonRank,
+  tigerRank,
+  effectiveRtp,
+}) => {
+  const dragonResult = dragonRank > tigerRank ? 1 : dragonRank === tigerRank ? 2 : 0;
+  const tigerResult = tigerRank > dragonRank ? 1 : dragonRank === tigerRank ? 2 : 0;
+  const tieResult = dragonRank === tigerRank ? 1 : 0;
+  const rtp = decimalFromNumber(effectiveRtp);
+  const bets = { dragon: dragonBet, tiger: tigerBet, tie: tieBet };
+  const results = { dragon: dragonResult, tiger: tigerResult, tie: tieResult };
+  const halfDenominator = decimalMultiply(TWO, BASE);
+  let totalNumerator = ZERO;
+  const wins = {};
+
+  for (const type of BET_TYPES) {
+    const bet = decimalFromNumber(bets[type]);
+    let numerator = ZERO;
+    let denominator = ONE;
+    if (results[type] === 1) {
+      numerator = decimalMultiply(
+        bet,
+        decimalAdd(BASE, decimalMultiply(decimalFromNumber(WEIGHT[type]), rtp)),
+      );
+      denominator = BASE;
+      totalNumerator = decimalAdd(totalNumerator, decimalMultiply(TWO, numerator));
+    } else if (results[type] === 2) {
+      numerator = bet;
+      denominator = TWO;
+      totalNumerator = decimalAdd(totalNumerator, decimalMultiply(BASE, bet));
+    }
+    wins[type] = Number(decimalDivideToCents(numerator, denominator)) / 100;
+  }
+
+  const totalBetCents = decimalDivideToCents(
+    decimalAdd(decimalAdd(decimalFromNumber(dragonBet), decimalFromNumber(tigerBet)), decimalFromNumber(tieBet)),
+    ONE,
+  );
+  const totalWinCents = decimalDivideToCents(totalNumerator, halfDenominator);
+  return {
+    dragonResult,
+    tigerResult,
+    tieResult,
+    dragonWin: wins.dragon,
+    tigerWin: wins.tiger,
+    tieWin: wins.tie,
+    totalBet: Number(totalBetCents) / 100,
+    totalWin: Number(totalWinCents) / 100,
+    matchStatus: totalWinCents > totalBetCents ? 1 : totalWinCents < totalBetCents ? 0 : 2,
+  };
+};
+
+return { P_DRAGON_WIN: P_DRAGON_WIN, P_TIGER_WIN: P_TIGER_WIN, P_TIE: P_TIE, BASE_RTP: BASE_RTP, TIE_HALF_RETURN_RATIO: TIE_HALF_RETURN_RATIO, BET_TYPES: BET_TYPES, DRAGON_TIGER_NATIVE_RTP: DRAGON_TIGER_NATIVE_RTP, dragontigerExpectedRtp: dragontigerExpectedRtp, resolveDragonTigerHand: resolveDragonTigerHand, settleDragontiger: settleDragontiger };
 });
 
 __define("paytables/blackjack-engine.js", function () {
@@ -7683,8 +7849,8 @@ return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulat
 
 __define("games/baccarat.js", function () {
 /**
- * BACCARAT 單筆模擬（A 類——三注型各自反解皆命中同一 RTP 設定值，故任一投注
- * 類型分布下期望 RTP 恆等於設定值，僅波動幅度隨分布不同）。
+ * BACCARAT 單筆模擬（A 類）。三注型原生 RTP 不同，期望 RTP 隨投注
+ * 類型分布及設定值而變動。
  * 遊戲專屬參數：玩家投注類型分布假設（閒／莊／和 各佔比 %，需總和 100%）。
  * 每筆模擬依此分布隨機抽出本局玩家押注的類型（抽樣屬玩家行為假設，非遊戲結果
  * RNG），僅該注型下注、其餘兩注型金額為 0。
@@ -7692,6 +7858,7 @@ __define("games/baccarat.js", function () {
 const { generateBaccaratResult } = __require("seed.js");
 const { resolveHand, settleBaccarat } = __require("paytables/baccarat.js");
 const { weightedChoiceIndex } = __require("games/random-choice.js");
+const { round2 } = __require("decimal-utils.js");
 
 const CLASSIFICATION = "A";
 
@@ -7721,7 +7888,44 @@ const simulateOneUnit = (
   });
 
   const win = settle.totalWin;
-  return { invested: betAmount, win, profit: win - betAmount };
+  return { invested: betAmount, win, profit: round2(win - betAmount) };
+};
+
+return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
+});
+
+__define("games/dragon-tiger.js", function () {
+/** 龍虎單筆模擬，注型分布代表玩家押注選擇。 */
+const { generateDragontigerResult } = __require("seed.js");
+const { resolveDragonTigerHand, settleDragontiger } = __require("paytables/dragon-tiger.js");
+const { round2 } = __require("decimal-utils.js");
+const { weightedChoiceIndex } = __require("games/random-choice.js");
+
+const CLASSIFICATION = "A";
+const DEFAULT_PARAMS = { dragonPct: 48, tigerPct: 48, tiePct: 4 };
+const BET_TYPES = ["dragon", "tiger", "tie"];
+
+const simulateOneUnit = (
+  serverSeed,
+  clientSeed,
+  nonce,
+  { dragonPct, tigerPct, tiePct, betAmount, rtp },
+) => {
+  const hand = resolveDragonTigerHand(generateDragontigerResult(serverSeed, clientSeed, nonce));
+  const chosenType = BET_TYPES[weightedChoiceIndex([dragonPct, tigerPct, tiePct])];
+  const settle = settleDragontiger({
+    dragonBet: chosenType === "dragon" ? betAmount : 0,
+    tigerBet: chosenType === "tiger" ? betAmount : 0,
+    tieBet: chosenType === "tie" ? betAmount : 0,
+    dragonRank: hand.dragonRank,
+    tigerRank: hand.tigerRank,
+    effectiveRtp: rtp,
+  });
+  return {
+    invested: betAmount,
+    win: settle.totalWin,
+    profit: round2(settle.totalWin - betAmount),
+  };
 };
 
 return { CLASSIFICATION: CLASSIFICATION, DEFAULT_PARAMS: DEFAULT_PARAMS, simulateOneUnit: simulateOneUnit };
@@ -8314,6 +8518,7 @@ const chicken = __require("games/chicken.js");
 const plinko = __require("games/plinko.js");
 const wheel = __require("games/wheel.js");
 const baccarat = __require("games/baccarat.js");
+const dragonTiger = __require("games/dragon-tiger.js");
 const flip = __require("games/flip.js");
 const blackjack = __require("games/blackjack.js");
 const slot = __require("games/slot.js");
@@ -8392,6 +8597,11 @@ const GAME_REGISTRY = {
     simulateOneUnit: baccarat.simulateOneUnit,
     defaultParams: baccarat.DEFAULT_PARAMS,
   },
+  DRAGON_TIGER: {
+    classification: "A",
+    simulateOneUnit: dragonTiger.simulateOneUnit,
+    defaultParams: dragonTiger.DEFAULT_PARAMS,
+  },
   FLIP: {
     classification: "B",
     simulateOneUnit: flip.simulateOneUnit,
@@ -8404,6 +8614,10 @@ const GAME_REGISTRY = {
   },
 };
 
+GAME_REGISTRY.AI_DRAGON_TIGER = GAME_REGISTRY.DRAGON_TIGER;
+GAME_REGISTRY.AI_BACCARAT = GAME_REGISTRY.BACCARAT;
+GAME_REGISTRY.AI_BLACKJACK = GAME_REGISTRY.BLACKJACK;
+
 const GAME_CODES = Object.keys(GAME_REGISTRY);
 
 return { GAME_REGISTRY: GAME_REGISTRY, GAME_CODES: GAME_CODES };
@@ -8415,16 +8629,20 @@ __define("rtp-bounds.js", function () {
  * 通用範圍適用於大多數遊戲；
  * 部分遊戲另有可達性下界。
  *
- * 通用範圍：[0.01, 99.99]；BLACKJACK／BACCARAT 另有下界。
+ * 通用範圍：[0.01, 99.99]；BLACKJACK 另有下界。
  * 其餘遊戲使用通用範圍。
  * 本檔按遊戲提供對應的校驗函式。
  *
  */
 const { BLACKJACK_MIN_EFFECTIVE_RTP, blackjackRtpAchievable } = __require("paytables/blackjack.js");
-const { BACCARAT_MIN_EFFECTIVE_RTP, baccaratRtpAchievable } = __require("paytables/baccarat.js");
 
 const GENERIC_MIN = 0.01;
 const GENERIC_MAX = 99.99;
+const AI_SKIN_BOUNDS_ALIASES = {
+  AI_DRAGON_TIGER: "DRAGON_TIGER",
+  AI_BACCARAT: "BACCARAT",
+  AI_BLACKJACK: "BLACKJACK",
+};
 
 /**
  * @param {string} gameCode 大寫遊戲代號（如 "DICE"／"BLACKJACK"）
@@ -8433,6 +8651,7 @@ const GENERIC_MAX = 99.99;
  *   reasonKey 是使用者訊息的查找鍵；valid=true 時為 null。
  */
 const validateRtp = (gameCode, rtp) => {
+  gameCode = AI_SKIN_BOUNDS_ALIASES[gameCode] || gameCode;
   if (!Number.isFinite(rtp)) {
     return { valid: false, reasonKey: "invalid_number" };
   }
@@ -8445,19 +8664,6 @@ const validateRtp = (gameCode, rtp) => {
       return { valid: false, reasonKey: "above_maximum" };
     }
     if (!blackjackRtpAchievable(rtp)) {
-      return { valid: false, reasonKey: "unreachable" };
-    }
-    return { valid: true, reasonKey: null };
-  }
-
-  if (gameCode === "BACCARAT") {
-    if (rtp < BACCARAT_MIN_EFFECTIVE_RTP) {
-      return { valid: false, reasonKey: "below_minimum" };
-    }
-    if (rtp > GENERIC_MAX) {
-      return { valid: false, reasonKey: "above_maximum" };
-    }
-    if (!baccaratRtpAchievable(rtp)) {
       return { valid: false, reasonKey: "unreachable" };
     }
     return { valid: true, reasonKey: null };
@@ -8481,7 +8687,11 @@ const RTP_FLOOR_SOURCE = {
   PENGUIN: "generic",
   PLINKO: "generic",
   WHEEL: "generic",
-  BACCARAT: "dedicated",
+  BACCARAT: "generic",
+  DRAGON_TIGER: "generic",
+  AI_DRAGON_TIGER: "generic (alias DRAGON_TIGER)",
+  AI_BACCARAT: "generic (alias BACCARAT)",
+  AI_BLACKJACK: "dedicated (alias BLACKJACK)",
   BLACKJACK: "dedicated",
   FLIP: "generic",
 };
