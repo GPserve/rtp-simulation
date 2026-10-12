@@ -32,14 +32,20 @@
   // loaded on the page).
   var RTP_MESSAGES = {
     invalid_number: "Please enter a valid RTP value.",
+    too_many_decimals: "RTP supports at most 2 decimal places. Cannot run simulation.",
     out_of_range: "RTP must be between 0.01% and 99.99%. Cannot run simulation.",
     below_minimum: "Below this game's valid lower bound. Cannot run simulation.",
     above_maximum: "Exceeds the maximum allowed value (99.99%). Cannot run simulation.",
     unreachable: "This RTP value cannot be exactly achieved under this game's payout structure. Cannot run simulation.",
   };
 
+  var hasAtMostTwoDecimals = function (value) {
+    return Number(value.toFixed(2)) === value;
+  };
+
   var validateRtpValue = function (rtp) {
     if (!isFinite(rtp)) return { valid: false, reason: "invalid_number" };
+    if (!hasAtMostTwoDecimals(rtp)) return { valid: false, reason: "too_many_decimals" };
     if (rtp < 0.01 || rtp > 99.99) return { valid: false, reason: "out_of_range" };
     return { valid: true, reason: null };
   };
@@ -53,7 +59,9 @@
     if (window.RtpSim && RtpSim.validateRtp) {
       check = !isFinite(rtp)
         ? { valid: false, reasonKey: "invalid_number" }
-        : RtpSim.validateRtp(gameCode, rtp);
+        : !hasAtMostTwoDecimals(rtp)
+          ? { valid: false, reasonKey: "too_many_decimals" }
+          : RtpSim.validateRtp(gameCode, rtp);
     } else {
       check = validateRtpValue(rtp);
     }

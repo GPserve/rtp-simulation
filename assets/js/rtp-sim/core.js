@@ -3,9 +3,8 @@
 // result-generation and payout logic). Loadable in page, Web Worker and
 // Node (parity harnesses).
 //
-// Production uses decimal values with round-half-even precision; the engine
-// approximates them with IEEE754 double + manual half-even rounding — this is
-// a decision-support preview, not a settlement ledger.
+// Payout amounts use decimal arithmetic and round-half-even precision in the
+// bundled engine. This is a decision-support preview, not a settlement ledger.
 (function (root, factory) {
   var api = factory(root);
   if (typeof module === "object" && module.exports) {
